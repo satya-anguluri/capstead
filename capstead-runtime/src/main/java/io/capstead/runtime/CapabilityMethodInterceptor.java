@@ -13,6 +13,7 @@ import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Supplier;
 
 /**
  * Turns every {@code @Capability} invocation into a first-class {@link CapabilityExecution} and
@@ -26,16 +27,39 @@ import java.util.concurrent.TimeUnit;
  */
 public class CapabilityMethodInterceptor implements MethodInterceptor {
 
-    private final List<CapabilityExecutionRecorder> recorders;
-    private final TokenCostEstimator costEstimator;
-    private final CapabilityBudgetLedger budgetLedger;
+    private final Supplier<List<CapabilityExecutionRecorder>> recordersSupplier;
+    private final Supplier<TokenCostEstimator> costEstimatorSupplier;
+    private final Supplier<CapabilityBudgetLedger> budgetLedgerSupplier;
 
-    public CapabilityMethodInterceptor(List<CapabilityExecutionRecorder> recorders,
-                                       TokenCostEstimator costEstimator,
-                                       CapabilityBudgetLedger budgetLedger) {
-        this.recorders = recorders;
-        this.costEstimator = costEstimator;
-        this.budgetLedger = budgetLedger;
+    private volatile boolean resolved;
+    private List<CapabilityExecutionRecorder> recorders;
+    private TokenCostEstimator costEstimator;
+    private CapabilityBudgetLedger budgetLedger;
+
+    /**
+     * Collaborators are supplied lazily (resolved on first capability invocation) so that building
+     * this interceptor for the AOP advisor does not force early creation of the recorders, meter
+     * registry, cost estimator or budget ledger during the BeanPostProcessor phase.
+     */
+    public CapabilityMethodInterceptor(Supplier<List<CapabilityExecutionRecorder>> recordersSupplier,
+                                       Supplier<TokenCostEstimator> costEstimatorSupplier,
+                                       Supplier<CapabilityBudgetLedger> budgetLedgerSupplier) {
+        this.recordersSupplier = recordersSupplier;
+        this.costEstimatorSupplier = costEstimatorSupplier;
+        this.budgetLedgerSupplier = budgetLedgerSupplier;
+    }
+
+    private void ensureResolved() {
+        if (!resolved) {
+            synchronized (this) {
+                if (!resolved) {
+                    this.recorders = recordersSupplier.get();
+                    this.costEstimator = costEstimatorSupplier.get();
+                    this.budgetLedger = budgetLedgerSupplier.get();
+                    this.resolved = true;
+                }
+            }
+        }
     }
 
     @Override
@@ -46,6 +70,7 @@ public class CapabilityMethodInterceptor implements MethodInterceptor {
             return invocation.proceed();
         }
 
+        ensureResolved();
         enforceDailyBudget(invocation, annotation);
 
         CapabilityExecution.Builder builder = CapabilityExecution

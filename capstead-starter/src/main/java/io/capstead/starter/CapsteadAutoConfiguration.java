@@ -16,6 +16,7 @@ import org.springframework.aop.Advisor;
 import org.springframework.aop.config.AopConfigUtils;
 import org.springframework.aop.support.DefaultPointcutAdvisor;
 import org.springframework.aop.support.annotation.AnnotationMatchingPointcut;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.config.BeanDefinition;
 import org.springframework.beans.factory.support.BeanDefinitionRegistry;
 import org.springframework.boot.actuate.endpoint.annotation.Endpoint;
@@ -32,6 +33,7 @@ import org.springframework.context.annotation.Role;
 import org.springframework.core.type.AnnotationMetadata;
 
 import java.util.List;
+import java.util.stream.Collectors;
 
 /**
  * Auto-configures Capstead in any Spring Boot application on the classpath.
@@ -91,15 +93,19 @@ public class CapsteadAutoConfiguration {
     }
 
     @Bean
-    public CapabilityMethodInterceptor capabilityMethodInterceptor(List<CapabilityExecutionRecorder> recorders,
-                                                                   TokenCostEstimator costEstimator,
-                                                                   CapabilityBudgetLedger budgetLedger) {
-        return new CapabilityMethodInterceptor(recorders, costEstimator, budgetLedger);
+    @Role(BeanDefinition.ROLE_INFRASTRUCTURE)
+    public static CapabilityMethodInterceptor capabilityMethodInterceptor(ObjectProvider<CapabilityExecutionRecorder> recorders,
+                                                                          ObjectProvider<TokenCostEstimator> costEstimator,
+                                                                          ObjectProvider<CapabilityBudgetLedger> budgetLedger) {
+        return new CapabilityMethodInterceptor(
+                () -> recorders.orderedStream().collect(Collectors.toList()),
+                costEstimator::getIfAvailable,
+                budgetLedger::getIfAvailable);
     }
 
     @Bean
     @Role(BeanDefinition.ROLE_INFRASTRUCTURE)
-    public Advisor capabilityExecutionAdvisor(CapabilityMethodInterceptor interceptor) {
+    public static Advisor capabilityExecutionAdvisor(CapabilityMethodInterceptor interceptor) {
         AnnotationMatchingPointcut pointcut =
                 new AnnotationMatchingPointcut(null, Capability.class, true);
         return new DefaultPointcutAdvisor(pointcut, interceptor);
