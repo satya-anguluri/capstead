@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <title>Capstead — Capability Dashboard</title>
+    <style>
+        :root { --bg:#0f1420; --card:#171d2b; --line:#26304a; --text:#e6ebf5; --muted:#8b97b3; --ok:#37d67a; --warn:#f6c343; --bad:#f05a5a; --accent:#5b8cff; }
+        * { box-sizing: border-box; }
+        body { margin:0; background:var(--bg); color:var(--text); font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif; }
+        header { padding:24px 32px; border-bottom:1px solid var(--line); display:flex; align-items:baseline; gap:16px; }
+        header h1 { margin:0; font-size:20px; letter-spacing:.3px; }
+        header .sub { color:var(--muted); font-size:13px; }
+        header .spacer { flex:1; }
+        button { background:var(--card); color:var(--text); border:1px solid var(--line); border-radius:8px; padding:8px 14px; cursor:pointer; }
+        button:hover { border-color:var(--accent); }
+        main { padding:24px 32px; }
+        .cards { display:flex; gap:16px; flex-wrap:wrap; margin-bottom:24px; }
+        .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:16px 20px; min-width:180px; }
+        .card .label { color:var(--muted); font-size:12px; text-transform:uppercase; letter-spacing:.5px; }
+        .card .value { font-size:26px; font-weight:600; margin-top:6px; }
+        table { width:100%; border-collapse:collapse; background:var(--card); border:1px solid var(--line); border-radius:12px; overflow:hidden; }
+        th, td { text-align:left; padding:12px 16px; border-bottom:1px solid var(--line); white-space:nowrap; }
+        th { color:var(--muted); font-weight:600; font-size:12px; text-transform:uppercase; letter-spacing:.5px; }
+        tr:last-child td { border-bottom:none; }
+        td.num { text-align:right; font-variant-numeric:tabular-nums; }
+        .pill { display:inline-block; padding:2px 10px; border-radius:999px; font-size:12px; font-weight:600; }
+        .pill.ok { background:rgba(55,214,122,.15); color:var(--ok); }
+        .pill.warn { background:rgba(246,195,67,.15); color:var(--warn); }
+        .pill.bad { background:rgba(240,90,90,.15); color:var(--bad); }
+        .muted { color:var(--muted); }
+        .empty { color:var(--muted); padding:40px; text-align:center; }
+        code { background:#0c1119; padding:2px 6px; border-radius:6px; color:var(--accent); }
+    </style>
+</head>
+<body>
+<header>
+    <h1>Capstead</h1>
+    <span class="sub">Capability Dashboard</span>
+    <span class="spacer"></span>
+    <button id="refresh">Refresh</button>
+</header>
+<main>
+    <div class="cards" id="summary"></div>
+    <div id="content"></div>
+</main>
+<script>
+    // Actuator endpoints must be exposed, e.g.:
+    // management.endpoints.web.exposure.include=capabilities,capabilityscorecard
+    const BASE = (location.pathname.replace(/\/capstead\/?$/, '') || '') ;
+    const CATALOG_URL = BASE + '/actuator/capabilities';
+    const SCORECARD_URL = BASE + '/actuator/capabilityscorecard';
+
+    const fmtInt = n => (n ?? 0).toLocaleString();
+    const fmtMs = n => (n ?? 0).toFixed(0) + ' ms';
+    const fmtPct = r => ((r ?? 1) * 100).toFixed(1) + '%';
+    const fmtUsd = n => '$' + Number(n ?? 0).toFixed(4);
+
+    function health(rate) {
+        if (rate >= 0.99) return '<span class="pill ok">Healthy</span>';
+        if (rate >= 0.90) return '<span class="pill warn">Degraded</span>';
+        return '<span class="pill bad">Unhealthy</span>';
+    }
+
+    async function safeJson(url) {
+        try { const r = await fetch(url); if (!r.ok) return null; return await r.json(); }
+        catch (e) { return null; }
+    }
+
+    function indexMeta(catalog) {
+        const map = {};
+        (catalog || []).forEach(m => { map[(m.name || '') + '@' + (m.version || '')] = m; });
+        return map;
+    }
+
+    function render(scorecards, catalog) {
+        const meta = indexMeta(catalog);
+        const content = document.getElementById('content');
+        const summary = document.getElementById('summary');
+
+        if (!scorecards || scorecards.length === 0) {
+            summary.innerHTML = '';
+            content.innerHTML = '<div class="empty">No capability executions recorded yet. '
+                + 'Invoke a <code>@Capability</code> method, then refresh.</div>';
+            return;
+        }
+
+        const totalCalls = scorecards.reduce((a, s) => a + (s.invocations || 0), 0);
+        const totalCost = scorecards.reduce((a, s) => a + Number(s.totalCost || 0), 0);
+        const avgSuccess = scorecards.reduce((a, s) => a + (s.successRate || 0), 0) / scorecards.length;
+
+        summary.innerHTML = `
+            <div class="card"><div class="label">Capabilities</div><div class="value">${scorecards.length}</div></div>
+            <div class="card"><div class="label">Total Invocations</div><div class="value">${fmtInt(totalCalls)}</div></div>
+            <div class="card"><div class="label">Avg Success</div><div class="value">${fmtPct(avgSuccess)}</div></div>
+            <div class="card"><div class="label">Total Cost</div><div class="value">${fmtUsd(totalCost)}</div></div>`;
+
+        const rows = scorecards.map(s => {
+            const key = (s.name || '') + '@' + (s.version || '');
+            const m = meta[key] || {};
+            const tokens = (s.avgInputTokens || 0) + (s.avgOutputTokens || 0);
+            return `<tr>
+                <td>${s.name || ''}</td>
+                <td class="muted">v${s.version || ''}</td>
+                <td>${m.owner || '<span class="muted">—</span>'}</td>
+                <td>${m.domain || '<span class="muted">—</span>'}</td>
+                <td class="num">${fmtInt(s.invocations)}</td>
+                <td class="num">${fmtPct(s.successRate)}</td>
+                <td class="num">${fmtMs(s.avgLatencyMs)}</td>
+                <td class="num">${fmtInt(Math.round(tokens))}</td>
+                <td class="num">${fmtUsd(s.avgCost)}</td>
+                <td class="num">${fmtUsd(s.totalCost)}</td>
+                <td>${health(s.successRate)}</td>
+            </tr>`;
+        }).join('');
+
+        content.innerHTML = `<table>
+            <thead><tr>
+                <th>Capability</th><th>Version</th><th>Owner</th><th>Domain</th>
+                <th class="num">Calls</th><th class="num">Success</th><th class="num">Avg Latency</th>
+                <th class="num">Avg Tokens</th><th class="num">Avg Cost</th><th class="num">Total Cost</th><th>Health</th>
+            </tr></thead>
+            <tbody>${rows}</tbody>
+        </table>`;
+    }
+
+    async function load() {
+        const [scorecards, catalog] = await Promise.all([safeJson(SCORECARD_URL), safeJson(CATALOG_URL)]);
+        if (scorecards === null) {
+            document.getElementById('content').innerHTML =
+                '<div class="empty">Could not reach <code>/actuator/capabilityscorecard</code>. '
+                + 'Ensure the endpoint is exposed via '
+                + '<code>management.endpoints.web.exposure.include</code>.</div>';
+            return;
+        }
+        render(scorecards, catalog);
+    }
+
+    document.getElementById('refresh').addEventListener('click', load);
+    load();
+</script>
+</body>
+</html>
