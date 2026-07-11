@@ -29,6 +29,12 @@
             <artifactId>spring-boot-actuator</artifactId>
             <optional>true</optional>
         </dependency>
+        <!-- Spring MVC is optional: the dashboard view-controllers are only wired in a servlet web app. -->
+        <dependency>
+            <groupId>org.springframework</groupId>
+            <artifactId>spring-webmvc</artifactId>
+            <optional>true</optional>
+        </dependency>
 
         <!-- Test scope -->
         <dependency>

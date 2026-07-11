@@ -23,6 +23,7 @@ import org.springframework.boot.actuate.endpoint.annotation.Endpoint;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnWebApplication;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.ApplicationContext;
 import org.springframework.context.annotation.Bean;
@@ -31,6 +32,8 @@ import org.springframework.context.annotation.Import;
 import org.springframework.context.annotation.ImportBeanDefinitionRegistrar;
 import org.springframework.context.annotation.Role;
 import org.springframework.core.type.AnnotationMetadata;
+import org.springframework.web.servlet.config.annotation.ViewControllerRegistry;
+import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 
 import java.util.List;
 import java.util.stream.Collectors;
@@ -129,6 +132,21 @@ public class CapsteadAutoConfiguration {
         @ConditionalOnMissingBean
         public CapabilityScorecardEndpoint capabilityScorecardEndpoint(InMemoryCapabilityExecutionStore store) {
             return new CapabilityScorecardEndpoint(store);
+        }
+    }
+
+    /**
+     * Serves the Capstead dashboard at {@code /capstead} and {@code /capstead/} (forwarding to the
+     * bundled {@code /capstead/index.html}) when running as a servlet web app with Spring MVC.
+     */
+    @Configuration(proxyBeanMethods = false)
+    @ConditionalOnWebApplication(type = ConditionalOnWebApplication.Type.SERVLET)
+    @ConditionalOnClass(WebMvcConfigurer.class)
+    static class DashboardConfiguration implements WebMvcConfigurer {
+        @Override
+        public void addViewControllers(ViewControllerRegistry registry) {
+            registry.addViewController("/capstead").setViewName("forward:/capstead/index.html");
+            registry.addViewController("/capstead/").setViewName("forward:/capstead/index.html");
         }
     }
 
