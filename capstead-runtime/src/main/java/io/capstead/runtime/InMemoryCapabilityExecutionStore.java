@@ -10,6 +10,7 @@ import java.util.Deque;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.stream.Collectors;
 
 /**
@@ -57,6 +58,20 @@ public class InMemoryCapabilityExecutionStore implements CapabilityExecutionReco
     public synchronized List<CapabilityExecution> recentFor(String name) {
         return recent.stream()
                 .filter(execution -> execution.capabilityName().equals(name))
+                .collect(Collectors.toList());
+    }
+
+    /** The retained execution with the given id, if still in history. */
+    public synchronized Optional<CapabilityExecution> byId(String executionId) {
+        return recent.stream()
+                .filter(execution -> executionId.equals(execution.executionId()))
+                .findFirst();
+    }
+
+    /** Most-recent-first direct children of the given execution (its nested capability calls). */
+    public synchronized List<CapabilityExecution> childrenOf(String executionId) {
+        return recent.stream()
+                .filter(execution -> executionId.equals(execution.parentExecutionId()))
                 .collect(Collectors.toList());
     }
 

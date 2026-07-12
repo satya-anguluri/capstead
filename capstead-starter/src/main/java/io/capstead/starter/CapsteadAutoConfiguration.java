@@ -4,11 +4,15 @@ import io.capstead.annotation.Capability;
 import io.capstead.runtime.AnnotationCapabilityMetadataResolver;
 import io.capstead.runtime.CapabilityBudgetLedger;
 import io.capstead.runtime.CapabilityCatalog;
+import io.capstead.runtime.CapabilityDataRedactor;
 import io.capstead.runtime.CapabilityDiscovery;
+import io.capstead.runtime.CapabilityExecutionOptions;
+import io.capstead.runtime.CapabilityExecutionPublisher;
 import io.capstead.runtime.CapabilityExecutionRecorder;
 import io.capstead.runtime.CapabilityMetadataResolver;
 import io.capstead.runtime.CapabilityMethodInterceptor;
 import io.capstead.runtime.CapabilityNamingStrategy;
+import io.capstead.runtime.CapabilityPrincipalProvider;
 import io.capstead.runtime.CapabilityRegistry;
 import io.capstead.runtime.CapabilityScanRule;
 import io.capstead.runtime.CapabilitySignatureValidator;
@@ -17,6 +21,7 @@ import io.capstead.runtime.ConfiguredCapabilityRegistrar;
 import io.capstead.runtime.DefaultCapabilityNamingStrategy;
 import io.capstead.runtime.ExplicitCapabilityMetadataResolver;
 import io.capstead.runtime.InMemoryCapabilityExecutionStore;
+import io.capstead.runtime.NoOpCapabilityDataRedactor;
 import io.capstead.runtime.PricingTokenCostEstimator;
 import io.capstead.runtime.ScanRuleCapabilityMetadataResolver;
 import io.capstead.runtime.TokenCostEstimator;
@@ -47,6 +52,8 @@ import org.springframework.web.servlet.config.annotation.ViewControllerRegistry;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 
 import java.util.List;
+import java.util.concurrent.Executor;
+import java.util.concurrent.Executors;
 import java.util.stream.Collectors;
 
 /**
@@ -58,7 +65,7 @@ import java.util.stream.Collectors;
  * {@link ConditionalOnMissingBean}, so applications can override any piece.
  */
 @AutoConfiguration
-@EnableConfigurationProperties({CapsteadCostProperties.class, CapsteadScanProperties.class, CapsteadCapabilitiesProperties.class})
+@EnableConfigurationProperties({CapsteadCostProperties.class, CapsteadScanProperties.class, CapsteadCapabilitiesProperties.class, CapsteadExecutionsProperties.class})
 @Import(CapsteadAutoConfiguration.CapabilityAutoProxyRegistrar.class)
 public class CapsteadAutoConfiguration {
 
@@ -90,8 +97,45 @@ public class CapsteadAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    public InMemoryCapabilityExecutionStore capabilityExecutionStore() {
-        return new InMemoryCapabilityExecutionStore();
+    public InMemoryCapabilityExecutionStore capabilityExecutionStore(CapsteadExecutionsProperties executionsProperties) {
+        return new InMemoryCapabilityExecutionStore(executionsProperties.getMaxHistory());
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    public CapabilityDataRedactor capabilityDataRedactor() {
+        return new NoOpCapabilityDataRedactor();
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    public CapabilityExecutionOptions capabilityExecutionOptions(CapsteadExecutionsProperties executionsProperties,
+                                                                 CapabilityDataRedactor redactor,
+                                                                 ObjectProvider<CapabilityPrincipalProvider> principalProvider) {
+        return new CapabilityExecutionOptions(
+                executionsProperties.isCaptureInput(),
+                executionsProperties.isCaptureOutput(),
+                executionsProperties.getCaptureMaxLength(),
+                redactor,
+                principalProvider.getIfAvailable());
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    public CapabilityExecutionPublisher capabilityExecutionPublisher(ObjectProvider<CapabilityExecutionRecorder> recorders,
+                                                                     CapsteadExecutionsProperties executionsProperties) {
+        CapabilityExecutionPublisher.Mode mode = executionsProperties.getRecordingMode();
+        Executor executor = mode == CapabilityExecutionPublisher.Mode.ASYNC ? newRecordingExecutor() : null;
+        return new CapabilityExecutionPublisher(
+                recorders.orderedStream().collect(Collectors.toList()), mode, executor);
+    }
+
+    private static Executor newRecordingExecutor() {
+        return Executors.newSingleThreadExecutor(runnable -> {
+            Thread thread = new Thread(runnable, "capstead-execution-recorder");
+            thread.setDaemon(true);
+            return thread;
+        });
     }
 
     @Bean
@@ -143,14 +187,16 @@ public class CapsteadAutoConfiguration {
     @Bean
     @Role(BeanDefinition.ROLE_INFRASTRUCTURE)
     public static CapabilityMethodInterceptor capabilityMethodInterceptor(CompositeCapabilityMetadataResolver metadataResolver,
-                                                                          ObjectProvider<CapabilityExecutionRecorder> recorders,
+                                                                          ObjectProvider<CapabilityExecutionPublisher> publisher,
                                                                           ObjectProvider<TokenCostEstimator> costEstimator,
-                                                                          ObjectProvider<CapabilityBudgetLedger> budgetLedger) {
+                                                                          ObjectProvider<CapabilityBudgetLedger> budgetLedger,
+                                                                          ObjectProvider<CapabilityExecutionOptions> options) {
         return new CapabilityMethodInterceptor(
                 metadataResolver,
-                () -> recorders.orderedStream().collect(Collectors.toList()),
+                publisher::getObject,
                 costEstimator::getIfAvailable,
-                budgetLedger::getIfAvailable);
+                budgetLedger::getIfAvailable,
+                options::getIfAvailable);
     }
 
     @Bean
@@ -188,6 +234,12 @@ public class CapsteadAutoConfiguration {
         @ConditionalOnMissingBean
         public CapabilityScorecardEndpoint capabilityScorecardEndpoint(InMemoryCapabilityExecutionStore store) {
             return new CapabilityScorecardEndpoint(store);
+        }
+
+        @Bean
+        @ConditionalOnMissingBean
+        public CapabilityExecutionsEndpoint capabilityExecutionsEndpoint(InMemoryCapabilityExecutionStore store) {
+            return new CapabilityExecutionsEndpoint(store);
         }
     }
 

@@ -44,15 +44,23 @@ public class CapabilityAiObservationHandler implements ObservationHandler<ChatMo
         }
 
         String model = metadata.getModel();
-        if (model != null && !model.isBlank()) {
-            CapabilityExecutionContext.recordModel(model);
+        Usage usage = metadata.getUsage();
+        boolean hasModel = model != null && !model.isBlank();
+        if (!hasModel && usage == null) {
+            return;
         }
 
-        Usage usage = metadata.getUsage();
+        int input = 0;
+        int output = 0;
         if (usage != null) {
-            Integer input = usage.getPromptTokens();
-            Integer output = usage.getCompletionTokens();
-            CapabilityExecutionContext.recordTokens(input == null ? 0 : input, output == null ? 0 : output);
+            Integer promptTokens = usage.getPromptTokens();
+            Integer completionTokens = usage.getCompletionTokens();
+            input = promptTokens == null ? 0 : promptTokens;
+            output = completionTokens == null ? 0 : completionTokens;
         }
+
+        // Each ChatModel call is one model invocation on the capability execution; cost is priced by
+        // the interceptor from capstead.cost pricing.
+        CapabilityExecutionContext.recordModelInvocation(hasModel ? model : null, input, output, null);
     }
 }

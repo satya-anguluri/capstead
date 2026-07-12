@@ -3,6 +3,7 @@ package io.capstead.runtime;
 import io.capstead.core.CapabilityBudgetException;
 import io.capstead.core.CapabilityExecution;
 import io.capstead.core.CapabilityMetadata;
+import io.capstead.core.ModelInvocation;
 
 import org.aopalliance.intercept.MethodInterceptor;
 import org.aopalliance.intercept.MethodInvocation;
@@ -16,48 +17,55 @@ import java.util.function.Supplier;
 
 /**
  * Turns every {@code @Capability} invocation into a first-class {@link CapabilityExecution} and
- * fans it out to all registered {@link CapabilityExecutionRecorder}s.
+ * fans it out to all registered {@link CapabilityExecutionRecorder}s via a {@link CapabilityExecutionPublisher}.
  *
  * <p>Applied via a Spring AOP advisor, so capture is fully automatic — application code writes no
  * metrics. The interceptor enforces {@code @DailyBudget} before proceeding, then owns the execution
- * lifecycle (open, time, mark success/error, price via the {@link TokenCostEstimator}, publish) and
- * exposes the in-flight execution through {@link CapabilityExecutionContext} so token/model data can
- * be enriched by whoever actually calls the model.
+ * lifecycle (open, assign id, attribute principal, time, mark success/error, price each model
+ * invocation via the {@link TokenCostEstimator}, publish) and exposes the in-flight execution through
+ * {@link CapabilityExecutionContext} so token/model data can be enriched by whoever actually calls the
+ * model. Nested capability calls are linked into an execution tree automatically by the context stack.
  */
 public class CapabilityMethodInterceptor implements MethodInterceptor {
 
     private final CapabilityMetadataResolver metadataResolver;
-    private final Supplier<List<CapabilityExecutionRecorder>> recordersSupplier;
+    private final Supplier<CapabilityExecutionPublisher> publisherSupplier;
     private final Supplier<TokenCostEstimator> costEstimatorSupplier;
     private final Supplier<CapabilityBudgetLedger> budgetLedgerSupplier;
+    private final Supplier<CapabilityExecutionOptions> optionsSupplier;
 
     private volatile boolean resolved;
-    private List<CapabilityExecutionRecorder> recorders;
+    private CapabilityExecutionPublisher publisher;
     private TokenCostEstimator costEstimator;
     private CapabilityBudgetLedger budgetLedger;
+    private CapabilityExecutionOptions options;
 
     /**
      * Collaborators are supplied lazily (resolved on first capability invocation) so that building
-     * this interceptor for the AOP advisor does not force early creation of the recorders, meter
-     * registry, cost estimator or budget ledger during the BeanPostProcessor phase.
+     * this interceptor for the AOP advisor does not force early creation of the publisher, recorders,
+     * meter registry, cost estimator or budget ledger during the BeanPostProcessor phase.
      */
     public CapabilityMethodInterceptor(CapabilityMetadataResolver metadataResolver,
-                                       Supplier<List<CapabilityExecutionRecorder>> recordersSupplier,
+                                       Supplier<CapabilityExecutionPublisher> publisherSupplier,
                                        Supplier<TokenCostEstimator> costEstimatorSupplier,
-                                       Supplier<CapabilityBudgetLedger> budgetLedgerSupplier) {
+                                       Supplier<CapabilityBudgetLedger> budgetLedgerSupplier,
+                                       Supplier<CapabilityExecutionOptions> optionsSupplier) {
         this.metadataResolver = metadataResolver;
-        this.recordersSupplier = recordersSupplier;
+        this.publisherSupplier = publisherSupplier;
         this.costEstimatorSupplier = costEstimatorSupplier;
         this.budgetLedgerSupplier = budgetLedgerSupplier;
+        this.optionsSupplier = optionsSupplier;
     }
 
     private void ensureResolved() {
         if (!resolved) {
             synchronized (this) {
                 if (!resolved) {
-                    this.recorders = recordersSupplier.get();
+                    this.publisher = publisherSupplier.get();
                     this.costEstimator = costEstimatorSupplier.get();
                     this.budgetLedger = budgetLedgerSupplier.get();
+                    CapabilityExecutionOptions resolvedOptions = optionsSupplier.get();
+                    this.options = resolvedOptions == null ? CapabilityExecutionOptions.defaults() : resolvedOptions;
                     this.resolved = true;
                 }
             }
@@ -78,26 +86,24 @@ public class CapabilityMethodInterceptor implements MethodInterceptor {
                 .builder(metadata.name(), metadata.version())
                 .domain(metadata.domain())
                 .startedAt(Instant.now());
+        attributePrincipal(builder);
+        captureInput(builder, invocation.getArguments());
         CapabilityExecutionContext.begin(builder);
 
         long start = System.nanoTime();
         boolean success = true;
         String errorType = null;
         try {
-            return invocation.proceed();
+            Object result = invocation.proceed();
+            captureOutput(builder, result);
+            return result;
         } catch (Throwable t) {
             success = false;
             errorType = t.getClass().getName();
             throw t;
         } finally {
             long durationMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - start);
-            if (costEstimator != null && builder.estimatedCost() == null && builder.model() != null) {
-                BigDecimal cost = costEstimator.estimate(
-                        builder.model(), builder.inputTokens(), builder.outputTokens());
-                if (cost != null) {
-                    builder.estimatedCost(cost);
-                }
-            }
+            priceModelInvocations(builder);
             CapabilityExecution execution = builder
                     .finishedAt(Instant.now())
                     .durationMs(durationMs)
@@ -105,8 +111,76 @@ public class CapabilityMethodInterceptor implements MethodInterceptor {
                     .errorType(errorType)
                     .build();
             CapabilityExecutionContext.clear();
-            for (CapabilityExecutionRecorder recorder : recorders) {
-                recorder.record(execution);
+            publisher.publish(execution);
+        }
+    }
+
+    private void attributePrincipal(CapabilityExecution.Builder builder) {
+        if (options.principalProvider() == null) {
+            return;
+        }
+        String principal = options.principalProvider().currentPrincipal();
+        if (principal != null) {
+            builder.principal(principal);
+        }
+    }
+
+    private void captureInput(CapabilityExecution.Builder builder, Object[] arguments) {
+        if (!options.captureInput() || arguments == null || arguments.length == 0) {
+            return;
+        }
+        builder.capturedInput(options.redactor().redact(summarize(arguments)));
+    }
+
+    private void captureOutput(CapabilityExecution.Builder builder, Object result) {
+        if (!options.captureOutput() || result == null) {
+            return;
+        }
+        builder.capturedOutput(options.redactor().redact(truncate(String.valueOf(result))));
+    }
+
+    private String summarize(Object[] arguments) {
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < arguments.length; i++) {
+            if (i > 0) {
+                sb.append(", ");
+            }
+            sb.append(String.valueOf(arguments[i]));
+        }
+        return truncate(sb.toString());
+    }
+
+    private String truncate(String value) {
+        int max = options.captureMaxLength();
+        return value.length() <= max ? value : value.substring(0, max) + "…";
+    }
+
+    /** Prices any model invocation (or the synthesized back-compat one) that lacks an estimated cost. */
+    private void priceModelInvocations(CapabilityExecution.Builder builder) {
+        if (costEstimator == null) {
+            return;
+        }
+        List<ModelInvocation> invocations = builder.modelInvocations();
+        if (!invocations.isEmpty()) {
+            for (int i = 0; i < invocations.size(); i++) {
+                ModelInvocation invocation = invocations.get(i);
+                if (invocation.estimatedCost() == null && invocation.model() != null) {
+                    BigDecimal cost = costEstimator.estimate(
+                            invocation.model(), invocation.inputTokens(), invocation.outputTokens());
+                    if (cost != null) {
+                        invocations.set(i, new ModelInvocation(invocation.model(), invocation.inputTokens(),
+                                invocation.outputTokens(), cost, invocation.invokedAt()));
+                    }
+                }
+            }
+            return;
+        }
+        // Back-compat single-invocation path: price the fields that will be synthesized into one invocation.
+        if (builder.estimatedCost() == null && builder.model() != null) {
+            BigDecimal cost = costEstimator.estimate(
+                    builder.model(), builder.inputTokens(), builder.outputTokens());
+            if (cost != null) {
+                builder.estimatedCost(cost);
             }
         }
     }
