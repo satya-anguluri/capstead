@@ -1,6 +1,5 @@
 package io.capstead.starter;
 
-import io.capstead.core.CapabilityExecution;
 import io.capstead.runtime.InMemoryCapabilityExecutionStore;
 
 import org.springframework.boot.actuate.endpoint.annotation.Endpoint;
@@ -30,18 +29,20 @@ public class CapabilityExecutionsEndpoint {
     }
 
     @ReadOperation
-    public List<CapabilityExecution> executions() {
-        return store.recent();
+    public List<CapabilityExecutionView> executions() {
+        return store.recent().stream().map(CapabilityExecutionView::of).toList();
     }
 
     @ReadOperation
     public ExecutionTree execution(@Selector String id) {
         return store.byId(id)
-                .map(execution -> new ExecutionTree(execution, store.childrenOf(id)))
+                .map(execution -> new ExecutionTree(
+                        CapabilityExecutionView.of(execution),
+                        store.childrenOf(id).stream().map(CapabilityExecutionView::of).toList()))
                 .orElse(null);
     }
 
     /** One execution together with its direct nested-capability calls. */
-    public record ExecutionTree(CapabilityExecution execution, List<CapabilityExecution> children) {
+    public record ExecutionTree(CapabilityExecutionView execution, List<CapabilityExecutionView> children) {
     }
 }

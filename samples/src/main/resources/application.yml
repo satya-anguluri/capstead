@@ -1,0 +1,40 @@
+spring:
+  application:
+    name: capstead-sample
+
+# Expose the Capstead actuator endpoints (the dashboard reads these).
+management:
+  endpoints:
+    web:
+      exposure:
+        include: capabilities,capabilityscorecard,capabilitymetrics,capabilityexecutions
+
+capstead:
+  # Per-model pricing (price per one million tokens). Capstead prices each model invocation from this.
+  cost:
+    models:
+      claude-sonnet:
+        input-per-million-tokens: 3.00
+        output-per-million-tokens: 15.00
+      claude-haiku:
+        input-per-million-tokens: 0.80
+        output-per-million-tokens: 4.00
+      nova-pro:
+        input-per-million-tokens: 0.80
+        output-per-million-tokens: 3.20
+
+  # Durable execution recorder settings (all optional; shown for the demo).
+  executions:
+    recording-mode: best-effort   # best-effort (default) | sync | async
+    capture-input: true           # store a (redacted) input summary on each execution
+    capture-output: false
+
+  # Config-declared capability: no @Capability on ReportService#summarize — governed from here.
+  capabilities:
+    - name: "Summarize Report"
+      bean: reportService
+      method: summarize
+      domain: Reporting
+      owner: Ops
+      version: "1"
+      tags: [report, summary]

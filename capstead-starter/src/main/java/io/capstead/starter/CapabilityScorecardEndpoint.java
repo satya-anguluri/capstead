@@ -1,6 +1,5 @@
 package io.capstead.starter;
 
-import io.capstead.core.CapabilityExecution;
 import io.capstead.core.CapabilityScorecard;
 import io.capstead.runtime.InMemoryCapabilityExecutionStore;
 
@@ -35,7 +34,7 @@ public class CapabilityScorecardEndpoint {
     }
 
     @ReadOperation
-    public List<CapabilityExecution> history(@Selector String name) {
-        return store.recentFor(name);
+    public List<CapabilityExecutionView> history(@Selector String name) {
+        return store.recentFor(name).stream().map(CapabilityExecutionView::of).toList();
     }
 }
