@@ -15,6 +15,7 @@ import io.capstead.runtime.CapabilitySignatureValidator;
 import io.capstead.runtime.CompositeCapabilityMetadataResolver;
 import io.capstead.runtime.ConfiguredCapabilityRegistrar;
 import io.capstead.runtime.DefaultCapabilityNamingStrategy;
+import io.capstead.runtime.ExplicitCapabilityMetadataResolver;
 import io.capstead.runtime.InMemoryCapabilityExecutionStore;
 import io.capstead.runtime.PricingTokenCostEstimator;
 import io.capstead.runtime.ScanRuleCapabilityMetadataResolver;
@@ -57,7 +58,7 @@ import java.util.stream.Collectors;
  * {@link ConditionalOnMissingBean}, so applications can override any piece.
  */
 @AutoConfiguration
-@EnableConfigurationProperties({CapsteadCostProperties.class, CapsteadScanProperties.class})
+@EnableConfigurationProperties({CapsteadCostProperties.class, CapsteadScanProperties.class, CapsteadCapabilitiesProperties.class})
 @Import(CapsteadAutoConfiguration.CapabilityAutoProxyRegistrar.class)
 public class CapsteadAutoConfiguration {
 
@@ -113,10 +114,20 @@ public class CapsteadAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    public CapabilityMetadataResolver capabilityMetadataResolver(CapsteadScanProperties scanProperties,
+    public ExplicitCapabilityMetadataResolver explicitCapabilityMetadataResolver(ApplicationContext context,
+                                                                                 CapabilityRegistry registry,
+                                                                                 CapsteadCapabilitiesProperties capabilitiesProperties) {
+        return new ExplicitCapabilityMetadataResolver(context, registry, capabilitiesProperties.toDeclarations());
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    public CompositeCapabilityMetadataResolver capabilityMetadataResolver(ExplicitCapabilityMetadataResolver explicitResolver,
+                                                                CapsteadScanProperties scanProperties,
                                                                 CapabilityNamingStrategy namingStrategy) {
         return new CompositeCapabilityMetadataResolver(List.of(
                 new AnnotationCapabilityMetadataResolver(),
+                explicitResolver,
                 new ScanRuleCapabilityMetadataResolver(scanProperties.toRules(), namingStrategy)));
     }
 
@@ -131,7 +142,7 @@ public class CapsteadAutoConfiguration {
 
     @Bean
     @Role(BeanDefinition.ROLE_INFRASTRUCTURE)
-    public static CapabilityMethodInterceptor capabilityMethodInterceptor(CapabilityMetadataResolver metadataResolver,
+    public static CapabilityMethodInterceptor capabilityMethodInterceptor(CompositeCapabilityMetadataResolver metadataResolver,
                                                                           ObjectProvider<CapabilityExecutionRecorder> recorders,
                                                                           ObjectProvider<TokenCostEstimator> costEstimator,
                                                                           ObjectProvider<CapabilityBudgetLedger> budgetLedger) {
@@ -145,12 +156,17 @@ public class CapsteadAutoConfiguration {
     @Bean
     @Role(BeanDefinition.ROLE_INFRASTRUCTURE)
     public static Advisor capabilityExecutionAdvisor(CapabilityMethodInterceptor interceptor,
+                                                     ExplicitCapabilityMetadataResolver explicitResolver,
                                                      CapsteadScanProperties scanProperties) {
-        Pointcut annotationPointcut = new AnnotationMatchingPointcut(null, Capability.class, true);
+        Pointcut pointcut = new AnnotationMatchingPointcut(null, Capability.class, true);
+        if (!explicitResolver.methods().isEmpty()) {
+            pointcut = Pointcuts.union(pointcut,
+                    new ExplicitCapabilityMethodMatcherPointcut(explicitResolver.methods()));
+        }
         List<CapabilityScanRule> rules = scanProperties.toRules();
-        Pointcut pointcut = rules.isEmpty()
-                ? annotationPointcut
-                : Pointcuts.union(annotationPointcut, new ScanRuleMethodMatcherPointcut(rules));
+        if (!rules.isEmpty()) {
+            pointcut = Pointcuts.union(pointcut, new ScanRuleMethodMatcherPointcut(rules));
+        }
         return new DefaultPointcutAdvisor(pointcut, interceptor);
     }
 
