@@ -10,9 +10,9 @@
         <version>0.2.0</version>
     </parent>
 
-    <artifactId>capstead-spring-ai</artifactId>
-    <name>Capstead Spring AI Bridge</name>
-    <description>Enriches capability executions with Spring AI token/model/cost data via Micrometer observations.</description>
+    <artifactId>capstead-mcp-server</artifactId>
+    <name>Capstead MCP Server Bridge</name>
+    <description>Serves governed capabilities as Spring AI tools (ToolCallbackProvider) so they are exposed over a live MCP server transport.</description>
 
     <properties>
         <spring-ai.version>1.0.0</spring-ai.version>
@@ -33,7 +33,7 @@
     <dependencies>
         <dependency>
             <groupId>io.capstead</groupId>
-            <artifactId>capstead-runtime</artifactId>
+            <artifactId>capstead-mcp</artifactId>
         </dependency>
         <dependency>
             <groupId>org.springframework.ai</groupId>
@@ -44,7 +44,13 @@
             <artifactId>spring-boot-autoconfigure</artifactId>
         </dependency>
 
-        <!-- Test scope -->
+        <!-- Test scope: the starter wires the registry, discovery and governing interceptor. -->
+        <dependency>
+            <groupId>io.capstead</groupId>
+            <artifactId>capstead-starter</artifactId>
+            <version>${project.version}</version>
+            <scope>test</scope>
+        </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-test</artifactId>

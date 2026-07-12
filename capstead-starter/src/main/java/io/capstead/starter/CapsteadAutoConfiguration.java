@@ -1,20 +1,30 @@
 package io.capstead.starter;
 
 import io.capstead.annotation.Capability;
+import io.capstead.runtime.AnnotationCapabilityMetadataResolver;
 import io.capstead.runtime.CapabilityBudgetLedger;
 import io.capstead.runtime.CapabilityCatalog;
 import io.capstead.runtime.CapabilityDiscovery;
 import io.capstead.runtime.CapabilityExecutionRecorder;
+import io.capstead.runtime.CapabilityMetadataResolver;
 import io.capstead.runtime.CapabilityMethodInterceptor;
+import io.capstead.runtime.CapabilityNamingStrategy;
 import io.capstead.runtime.CapabilityRegistry;
+import io.capstead.runtime.CapabilityScanRule;
 import io.capstead.runtime.CapabilitySignatureValidator;
+import io.capstead.runtime.CompositeCapabilityMetadataResolver;
+import io.capstead.runtime.ConfiguredCapabilityRegistrar;
+import io.capstead.runtime.DefaultCapabilityNamingStrategy;
 import io.capstead.runtime.InMemoryCapabilityExecutionStore;
 import io.capstead.runtime.PricingTokenCostEstimator;
+import io.capstead.runtime.ScanRuleCapabilityMetadataResolver;
 import io.capstead.runtime.TokenCostEstimator;
 
 import org.springframework.aop.Advisor;
+import org.springframework.aop.Pointcut;
 import org.springframework.aop.config.AopConfigUtils;
 import org.springframework.aop.support.DefaultPointcutAdvisor;
+import org.springframework.aop.support.Pointcuts;
 import org.springframework.aop.support.annotation.AnnotationMatchingPointcut;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.config.BeanDefinition;
@@ -47,7 +57,7 @@ import java.util.stream.Collectors;
  * {@link ConditionalOnMissingBean}, so applications can override any piece.
  */
 @AutoConfiguration
-@EnableConfigurationProperties(CapsteadCostProperties.class)
+@EnableConfigurationProperties({CapsteadCostProperties.class, CapsteadScanProperties.class})
 @Import(CapsteadAutoConfiguration.CapabilityAutoProxyRegistrar.class)
 public class CapsteadAutoConfiguration {
 
@@ -96,11 +106,37 @@ public class CapsteadAutoConfiguration {
     }
 
     @Bean
+    @ConditionalOnMissingBean
+    public CapabilityNamingStrategy capabilityNamingStrategy() {
+        return new DefaultCapabilityNamingStrategy();
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    public CapabilityMetadataResolver capabilityMetadataResolver(CapsteadScanProperties scanProperties,
+                                                                CapabilityNamingStrategy namingStrategy) {
+        return new CompositeCapabilityMetadataResolver(List.of(
+                new AnnotationCapabilityMetadataResolver(),
+                new ScanRuleCapabilityMetadataResolver(scanProperties.toRules(), namingStrategy)));
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    public ConfiguredCapabilityRegistrar configuredCapabilityRegistrar(ApplicationContext context,
+                                                                       CapabilityRegistry registry,
+                                                                       CapsteadScanProperties scanProperties,
+                                                                       CapabilityNamingStrategy namingStrategy) {
+        return new ConfiguredCapabilityRegistrar(context, registry, scanProperties.toRules(), namingStrategy);
+    }
+
+    @Bean
     @Role(BeanDefinition.ROLE_INFRASTRUCTURE)
-    public static CapabilityMethodInterceptor capabilityMethodInterceptor(ObjectProvider<CapabilityExecutionRecorder> recorders,
+    public static CapabilityMethodInterceptor capabilityMethodInterceptor(CapabilityMetadataResolver metadataResolver,
+                                                                          ObjectProvider<CapabilityExecutionRecorder> recorders,
                                                                           ObjectProvider<TokenCostEstimator> costEstimator,
                                                                           ObjectProvider<CapabilityBudgetLedger> budgetLedger) {
         return new CapabilityMethodInterceptor(
+                metadataResolver,
                 () -> recorders.orderedStream().collect(Collectors.toList()),
                 costEstimator::getIfAvailable,
                 budgetLedger::getIfAvailable);
@@ -108,9 +144,13 @@ public class CapsteadAutoConfiguration {
 
     @Bean
     @Role(BeanDefinition.ROLE_INFRASTRUCTURE)
-    public static Advisor capabilityExecutionAdvisor(CapabilityMethodInterceptor interceptor) {
-        AnnotationMatchingPointcut pointcut =
-                new AnnotationMatchingPointcut(null, Capability.class, true);
+    public static Advisor capabilityExecutionAdvisor(CapabilityMethodInterceptor interceptor,
+                                                     CapsteadScanProperties scanProperties) {
+        Pointcut annotationPointcut = new AnnotationMatchingPointcut(null, Capability.class, true);
+        List<CapabilityScanRule> rules = scanProperties.toRules();
+        Pointcut pointcut = rules.isEmpty()
+                ? annotationPointcut
+                : Pointcuts.union(annotationPointcut, new ScanRuleMethodMatcherPointcut(rules));
         return new DefaultPointcutAdvisor(pointcut, interceptor);
     }
 

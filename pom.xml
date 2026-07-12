@@ -13,7 +13,7 @@
 
     <groupId>io.capstead</groupId>
     <artifactId>capstead-parent</artifactId>
-    <version>0.1.0-SNAPSHOT</version>
+    <version>0.2.0</version>
     <packaging>pom</packaging>
 
     <name>Capstead Parent</name>
@@ -54,6 +54,8 @@
         <module>capstead-runtime</module>
         <module>capstead-starter</module>
         <module>capstead-spring-ai</module>
+        <module>capstead-mcp</module>
+        <module>capstead-mcp-server</module>
     </modules>
 
     <dependencyManagement>
@@ -76,6 +78,16 @@
             <dependency>
                 <groupId>io.capstead</groupId>
                 <artifactId>capstead-starter</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.capstead</groupId>
+                <artifactId>capstead-mcp</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.capstead</groupId>
+                <artifactId>capstead-mcp-server</artifactId>
                 <version>${project.version}</version>
             </dependency>
         </dependencies>
@@ -132,7 +144,7 @@
                     <plugin>
                         <groupId>org.sonatype.central</groupId>
                         <artifactId>central-publishing-maven-plugin</artifactId>
-                        <version>0.7.0</version>
+                        <version>0.11.0</version>
                         <extensions>true</extensions>
                         <configuration>
                             <publishingServerId>central</publishingServerId>

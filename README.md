@@ -20,6 +20,7 @@ Modern apps expose AI capabilities across many services and teams, and nobody ca
 | First-class execution records + **cost/scorecards** | ❌ (per model-call only) | ✅ |
 | **Daily budgets** & governance | ❌ | ✅ |
 | Enforced provider hiding | ❌ | ✅ |
+| Export capabilities as **governed MCP tools** | ❌ | ✅ |
 
 ---
 
@@ -117,6 +118,50 @@ Now every capability's scorecard shows real token counts and estimated cost — 
 
 ---
 
+## Export capabilities as MCP tools
+
+Capstead can publish your governed capabilities as [Model Context Protocol](https://modelcontextprotocol.io) (MCP) tools — so an MCP client (or an LLM) can discover and call them, while they stay **versioned, owned, and budget-enforced**. Plain MCP tools have none of that governance; Capstead carries it through.
+
+### Transport-agnostic tool model + actuator
+
+```xml
+<dependency>
+    <groupId>io.capstead</groupId>
+    <artifactId>capstead-mcp</artifactId>
+    <version>0.1.0</version>
+</dependency>
+```
+
+Each `@Capability` becomes an MCP tool: a stable `name@version`-derived tool id, a JSON input schema derived from the method signature, and a `governance` block (owner, domain, version, tags). Two actuator surfaces are added:
+
+```
+GET  /actuator/capabilitymcp          # tools/list — every capability as an MCP tool
+GET  /actuator/capabilitymcp/{name}   # a single tool definition
+POST /actuator/capabilitymcp/{name}   # tools/call — body {"arguments": { ... }}
+```
+
+Invocations route through the capability's governing proxy, so `@DailyBudget` and execution recording apply exactly as for a direct call.
+
+### Serve over a live MCP server
+
+To expose the tools over a real MCP transport (STDIO, SSE, Streamable-HTTP), add the bridge plus any Spring AI MCP server starter:
+
+```xml
+<dependency>
+    <groupId>io.capstead</groupId>
+    <artifactId>capstead-mcp-server</artifactId>
+    <version>0.1.0</version>
+</dependency>
+<dependency>
+    <groupId>org.springframework.ai</groupId>
+    <artifactId>spring-ai-starter-mcp-server</artifactId>
+</dependency>
+```
+
+`capstead-mcp-server` registers a Spring AI `ToolCallbackProvider` built from your capabilities; the MCP server starter discovers it and serves every capability automatically — no per-tool code.
+
+---
+
 ## Modules
 
 | Module | Purpose |
@@ -126,6 +171,8 @@ Now every capability's scorecard shows real token counts and estimated cost — 
 | `capstead-runtime` | Registry, discovery, execution capture, cost, budgets |
 | `capstead-starter` | Spring Boot auto-configuration + actuator endpoints + dashboard |
 | `capstead-spring-ai` | Optional bridge: token/model attribution from Spring AI observations |
+| `capstead-mcp` | Optional: export capabilities as MCP tools + `/actuator/capabilitymcp` |
+| `capstead-mcp-server` | Optional: serve capabilities over a live MCP server via Spring AI `ToolCallbackProvider` |
 
 ---
 
@@ -140,7 +187,7 @@ Now every capability's scorecard shows real token counts and estimated cost — 
 
 ## Status
 
-Early (`0.1.0`). The open-source core is complete and tested: registry, metadata, versioning, discovery, first-class executions, cost estimation, daily budgets, three actuator endpoints, a dashboard, and the Spring AI bridge.
+Early (`0.1.0`). The open-source core is complete and tested: registry, metadata, versioning, discovery, first-class executions, cost estimation, daily budgets, three actuator endpoints, a dashboard, the Spring AI bridge, and MCP export (tool model, actuator, and Spring AI MCP server bridge).
 
 ## License
 

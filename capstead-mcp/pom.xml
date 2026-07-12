@@ -10,25 +10,9 @@
         <version>0.2.0</version>
     </parent>
 
-    <artifactId>capstead-spring-ai</artifactId>
-    <name>Capstead Spring AI Bridge</name>
-    <description>Enriches capability executions with Spring AI token/model/cost data via Micrometer observations.</description>
-
-    <properties>
-        <spring-ai.version>1.0.0</spring-ai.version>
-    </properties>
-
-    <dependencyManagement>
-        <dependencies>
-            <dependency>
-                <groupId>org.springframework.ai</groupId>
-                <artifactId>spring-ai-bom</artifactId>
-                <version>${spring-ai.version}</version>
-                <type>pom</type>
-                <scope>import</scope>
-            </dependency>
-        </dependencies>
-    </dependencyManagement>
+    <artifactId>capstead-mcp</artifactId>
+    <name>Capstead MCP Export</name>
+    <description>Exports governed capabilities as Model Context Protocol (MCP) tools, preserving versioning, ownership and budget governance.</description>
 
     <dependencies>
         <dependency>
@@ -36,15 +20,23 @@
             <artifactId>capstead-runtime</artifactId>
         </dependency>
         <dependency>
-            <groupId>org.springframework.ai</groupId>
-            <artifactId>spring-ai-model</artifactId>
-        </dependency>
-        <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-autoconfigure</artifactId>
         </dependency>
+        <!-- Actuator is optional: the /actuator/capabilitymcp endpoint is only wired when it is present. -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-actuator</artifactId>
+            <optional>true</optional>
+        </dependency>
 
-        <!-- Test scope -->
+        <!-- Test scope: the starter wires the registry, discovery and governing interceptor. -->
+        <dependency>
+            <groupId>io.capstead</groupId>
+            <artifactId>capstead-starter</artifactId>
+            <version>${project.version}</version>
+            <scope>test</scope>
+        </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-test</artifactId>

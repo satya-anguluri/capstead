@@ -1,14 +1,13 @@
 package io.capstead.runtime;
 
-import io.capstead.annotation.Capability;
-import io.capstead.annotation.DailyBudget;
 import io.capstead.core.CapabilityBudgetException;
 import io.capstead.core.CapabilityExecution;
+import io.capstead.core.CapabilityMetadata;
 
 import org.aopalliance.intercept.MethodInterceptor;
 import org.aopalliance.intercept.MethodInvocation;
-import org.springframework.core.annotation.AnnotatedElementUtils;
 
+import java.lang.reflect.Method;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
@@ -27,6 +26,7 @@ import java.util.function.Supplier;
  */
 public class CapabilityMethodInterceptor implements MethodInterceptor {
 
+    private final CapabilityMetadataResolver metadataResolver;
     private final Supplier<List<CapabilityExecutionRecorder>> recordersSupplier;
     private final Supplier<TokenCostEstimator> costEstimatorSupplier;
     private final Supplier<CapabilityBudgetLedger> budgetLedgerSupplier;
@@ -41,9 +41,11 @@ public class CapabilityMethodInterceptor implements MethodInterceptor {
      * this interceptor for the AOP advisor does not force early creation of the recorders, meter
      * registry, cost estimator or budget ledger during the BeanPostProcessor phase.
      */
-    public CapabilityMethodInterceptor(Supplier<List<CapabilityExecutionRecorder>> recordersSupplier,
+    public CapabilityMethodInterceptor(CapabilityMetadataResolver metadataResolver,
+                                       Supplier<List<CapabilityExecutionRecorder>> recordersSupplier,
                                        Supplier<TokenCostEstimator> costEstimatorSupplier,
                                        Supplier<CapabilityBudgetLedger> budgetLedgerSupplier) {
+        this.metadataResolver = metadataResolver;
         this.recordersSupplier = recordersSupplier;
         this.costEstimatorSupplier = costEstimatorSupplier;
         this.budgetLedgerSupplier = budgetLedgerSupplier;
@@ -64,18 +66,17 @@ public class CapabilityMethodInterceptor implements MethodInterceptor {
 
     @Override
     public Object invoke(MethodInvocation invocation) throws Throwable {
-        Capability annotation =
-                AnnotatedElementUtils.findMergedAnnotation(invocation.getMethod(), Capability.class);
-        if (annotation == null) {
+        CapabilityMetadata metadata = metadataResolver.resolve(invocation.getMethod());
+        if (metadata == null) {
             return invocation.proceed();
         }
 
         ensureResolved();
-        enforceDailyBudget(invocation, annotation);
+        enforceDailyBudget(invocation.getMethod(), metadata);
 
         CapabilityExecution.Builder builder = CapabilityExecution
-                .builder(annotation.name(), annotation.version())
-                .domain(annotation.domain())
+                .builder(metadata.name(), metadata.version())
+                .domain(metadata.domain())
                 .startedAt(Instant.now());
         CapabilityExecutionContext.begin(builder);
 
@@ -110,23 +111,21 @@ public class CapabilityMethodInterceptor implements MethodInterceptor {
         }
     }
 
-    private void enforceDailyBudget(MethodInvocation invocation, Capability annotation) {
+    private void enforceDailyBudget(Method method, CapabilityMetadata metadata) {
         if (budgetLedger == null) {
             return;
         }
-        DailyBudget dailyBudget =
-                AnnotatedElementUtils.findMergedAnnotation(invocation.getMethod(), DailyBudget.class);
-        if (dailyBudget == null) {
+        String spec = metadataResolver.dailyBudget(method);
+        if (spec == null) {
             return;
         }
-        BigDecimal budget = parseBudget(dailyBudget.value());
+        BigDecimal budget = parseBudget(spec);
         if (budget == null) {
             return;
         }
-        String coordinates = annotation.name() + "@" + annotation.version();
-        BigDecimal spent = budgetLedger.spentToday(coordinates);
+        BigDecimal spent = budgetLedger.spentToday(metadata.coordinates());
         if (spent.compareTo(budget) >= 0) {
-            throw new CapabilityBudgetException(annotation.name(), budget, spent);
+            throw new CapabilityBudgetException(metadata.name(), budget, spent);
         }
     }
 
