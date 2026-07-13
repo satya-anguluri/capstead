@@ -7,7 +7,7 @@
     <parent>
         <groupId>io.capstead</groupId>
         <artifactId>capstead-parent</artifactId>
-        <version>0.5.0</version>
+        <version>0.5.1</version>
     </parent>
 
     <artifactId>capstead-mcp</artifactId>
