@@ -3,6 +3,7 @@ package io.capstead.jdbc;
 import io.capstead.core.CapabilityExecution;
 import io.capstead.core.CapabilityScorecard;
 import io.capstead.core.ModelInvocation;
+import io.capstead.runtime.CapabilityExecutionQuery;
 
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
@@ -18,7 +19,7 @@ import java.util.Optional;
  * restart-surviving counterpart to the in-memory store. An application can point its
  * {@code /actuator/capabilityscorecard} and execution views at this reader to serve durable numbers.
  */
-public class JdbcCapabilityExecutionReader {
+public class JdbcCapabilityExecutionReader implements CapabilityExecutionQuery {
 
     private static final String SCORECARDS = """
             SELECT capability_name,
@@ -57,6 +58,15 @@ public class JdbcCapabilityExecutionReader {
                    captured_input, captured_output
             FROM capstead_execution
             WHERE parent_execution_id = ?
+            ORDER BY started_at DESC
+            """;
+
+    private static final String SELECT_FOR_NAME = """
+            SELECT execution_id, parent_execution_id, capability_name, version, domain, principal,
+                   started_at, finished_at, duration_ms, success, error_type, retries,
+                   captured_input, captured_output
+            FROM capstead_execution
+            WHERE capability_name = ?
             ORDER BY started_at DESC
             """;
 
@@ -99,6 +109,13 @@ public class JdbcCapabilityExecutionReader {
     /** Most-recent-first durable execution history. */
     public List<CapabilityExecution> recent() {
         return jdbcTemplate.query(SELECT_RECENT, executionRowMapper()).stream()
+                .map(builder -> hydrate(builder, builder.executionId()))
+                .toList();
+    }
+
+    /** Most-recent-first durable history for a single capability (all versions). */
+    public List<CapabilityExecution> recentFor(String name) {
+        return jdbcTemplate.query(SELECT_FOR_NAME, executionRowMapper(), name).stream()
                 .map(builder -> hydrate(builder, builder.executionId()))
                 .toList();
     }

@@ -21,7 +21,7 @@ import java.util.stream.Collectors;
  * zero external infrastructure. It is the default {@link CapabilityExecutionRecorder}; production
  * deployments can add further recorders (database, event stream) alongside it.
  */
-public class InMemoryCapabilityExecutionStore implements CapabilityExecutionRecorder {
+public class InMemoryCapabilityExecutionStore implements CapabilityExecutionRecorder, CapabilityExecutionQuery {
 
     private static final int DEFAULT_MAX_HISTORY = 200;
 

@@ -1,7 +1,7 @@
 package io.capstead.starter;
 
 import io.capstead.core.CapabilityScorecard;
-import io.capstead.runtime.InMemoryCapabilityExecutionStore;
+import io.capstead.runtime.CapabilityExecutionQuery;
 
 import org.springframework.boot.actuate.endpoint.annotation.Endpoint;
 import org.springframework.boot.actuate.endpoint.annotation.ReadOperation;
@@ -22,9 +22,9 @@ import java.util.List;
 @Endpoint(id = "capabilityscorecard")
 public class CapabilityScorecardEndpoint {
 
-    private final InMemoryCapabilityExecutionStore store;
+    private final CapabilityExecutionQuery store;
 
-    public CapabilityScorecardEndpoint(InMemoryCapabilityExecutionStore store) {
+    public CapabilityScorecardEndpoint(CapabilityExecutionQuery store) {
         this.store = store;
     }
 

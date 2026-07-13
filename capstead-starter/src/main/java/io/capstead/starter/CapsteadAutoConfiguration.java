@@ -8,6 +8,7 @@ import io.capstead.runtime.CapabilityDataRedactor;
 import io.capstead.runtime.CapabilityDiscovery;
 import io.capstead.runtime.CapabilityExecutionOptions;
 import io.capstead.runtime.CapabilityExecutionPublisher;
+import io.capstead.runtime.CapabilityExecutionQuery;
 import io.capstead.runtime.CapabilityExecutionRecorder;
 import io.capstead.runtime.CapabilityMetadataResolver;
 import io.capstead.runtime.CapabilityMethodInterceptor;
@@ -232,14 +233,14 @@ public class CapsteadAutoConfiguration {
 
         @Bean
         @ConditionalOnMissingBean
-        public CapabilityScorecardEndpoint capabilityScorecardEndpoint(InMemoryCapabilityExecutionStore store) {
-            return new CapabilityScorecardEndpoint(store);
+        public CapabilityScorecardEndpoint capabilityScorecardEndpoint(CapabilityExecutionQuery executionQuery) {
+            return new CapabilityScorecardEndpoint(executionQuery);
         }
 
         @Bean
         @ConditionalOnMissingBean
-        public CapabilityExecutionsEndpoint capabilityExecutionsEndpoint(InMemoryCapabilityExecutionStore store) {
-            return new CapabilityExecutionsEndpoint(store);
+        public CapabilityExecutionsEndpoint capabilityExecutionsEndpoint(CapabilityExecutionQuery executionQuery) {
+            return new CapabilityExecutionsEndpoint(executionQuery);
         }
     }
 
