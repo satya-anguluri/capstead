@@ -45,6 +45,9 @@ class CapsteadDataSourceTest {
     void fallsBackToPrimaryDataSourceWhenNoDedicatedOneProvided() {
         runner.withUserConfiguration(SingleDataSource.class).run(context -> {
             assertThat(context).hasNotFailed();
+            // Regression: Capstead must NOT register a second DataSource bean — a second candidate
+            // disables Spring Boot's JPA auto-config (@ConditionalOnSingleCandidate) and breaks the app.
+            assertThat(context.getBeanNamesForType(DataSource.class)).hasSize(1);
             JdbcTemplate primary = new JdbcTemplate(context.getBean("primaryDataSource", DataSource.class));
             // With no dedicated bean, Capstead uses the primary DataSource, so its tables are there.
             assertThat(primary.queryForObject("SELECT COUNT(*) FROM capstead_execution", Integer.class)).isZero();

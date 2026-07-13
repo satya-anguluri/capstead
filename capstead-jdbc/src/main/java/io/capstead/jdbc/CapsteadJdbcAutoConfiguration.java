@@ -1,5 +1,6 @@
 package io.capstead.jdbc;
 
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
@@ -23,10 +24,12 @@ import javax.sql.DataSource;
  * rows. Capstead creates its own schema on startup.
  *
  * <p><strong>Isolating Capstead's tables:</strong> by default Capstead uses the application's primary
- * {@link DataSource}, so its tables live alongside the app's. To keep them in a separate schema (or
- * database, or even a different server), declare a bean named {@code capsteadDataSource} pointing there
- * — every Capstead table operation then uses it. The default {@link #capsteadDataSource(DataSource)}
- * bean backs off automatically when you provide your own.
+ * {@link DataSource}, so its tables live alongside the app's. To keep them in a separate schema,
+ * declare a bean named {@code capsteadDataSource} pointing there — every Capstead table operation then
+ * uses it. Capstead does <em>not</em> register a fallback DataSource bean (that would give the context
+ * two DataSources and disable JPA auto-configuration); when no {@code capsteadDataSource} exists it
+ * simply resolves the primary DataSource. If you <em>do</em> declare a {@code capsteadDataSource}, mark
+ * your application's main DataSource {@code @Primary} as usual for multi-DataSource apps.
  */
 @AutoConfiguration(afterName = "org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration")
 @ConditionalOnClass(JdbcTemplate.class)
@@ -35,44 +38,49 @@ import javax.sql.DataSource;
 @EnableConfigurationProperties(CapsteadJdbcProperties.class)
 public class CapsteadJdbcAutoConfiguration {
 
-    /**
-     * The {@link DataSource} Capstead persists to. Defaults to the application's primary DataSource;
-     * override by declaring your own bean named {@code capsteadDataSource} (e.g. pointing at a
-     * dedicated {@code capstead} schema).
-     */
-    @Bean
-    @ConditionalOnMissingBean(name = "capsteadDataSource")
-    public DataSource capsteadDataSource(DataSource dataSource) {
-        return dataSource;
-    }
-
     @Bean
     @ConditionalOnMissingBean
     public CapsteadSchemaInitializer capsteadSchemaInitializer(
-            @Qualifier("capsteadDataSource") DataSource dataSource) {
-        return new CapsteadSchemaInitializer(dataSource);
+            ObjectProvider<DataSource> dataSource,
+            @Qualifier("capsteadDataSource") ObjectProvider<DataSource> capsteadDataSource) {
+        return new CapsteadSchemaInitializer(resolve(dataSource, capsteadDataSource));
     }
 
     @Bean
     @ConditionalOnMissingBean
     public JdbcCapabilityExecutionRecorder jdbcCapabilityExecutionRecorder(
-            @Qualifier("capsteadDataSource") DataSource dataSource) {
-        return new JdbcCapabilityExecutionRecorder(new JdbcTemplate(dataSource));
+            ObjectProvider<DataSource> dataSource,
+            @Qualifier("capsteadDataSource") ObjectProvider<DataSource> capsteadDataSource) {
+        return new JdbcCapabilityExecutionRecorder(new JdbcTemplate(resolve(dataSource, capsteadDataSource)));
     }
 
     @Bean
     @Primary
     @ConditionalOnMissingBean
     public JdbcCapabilityExecutionReader jdbcCapabilityExecutionReader(
-            @Qualifier("capsteadDataSource") DataSource dataSource) {
-        return new JdbcCapabilityExecutionReader(new JdbcTemplate(dataSource));
+            ObjectProvider<DataSource> dataSource,
+            @Qualifier("capsteadDataSource") ObjectProvider<DataSource> capsteadDataSource) {
+        return new JdbcCapabilityExecutionReader(new JdbcTemplate(resolve(dataSource, capsteadDataSource)));
     }
 
     @Bean
     @ConditionalOnMissingBean
     public CapsteadJdbcRetentionCleaner capsteadJdbcRetentionCleaner(
-            @Qualifier("capsteadDataSource") DataSource dataSource,
+            ObjectProvider<DataSource> dataSource,
+            @Qualifier("capsteadDataSource") ObjectProvider<DataSource> capsteadDataSource,
             CapsteadJdbcProperties properties) {
-        return new CapsteadJdbcRetentionCleaner(new JdbcTemplate(dataSource), properties.getRetentionDays());
+        return new CapsteadJdbcRetentionCleaner(
+                new JdbcTemplate(resolve(dataSource, capsteadDataSource)), properties.getRetentionDays());
+    }
+
+    /**
+     * The dedicated {@code capsteadDataSource} bean when present, otherwise the application's primary
+     * DataSource. Resolving here (rather than registering a fallback bean) keeps the context to a
+     * single DataSource when no dedicated one is declared, so JPA auto-configuration is unaffected.
+     */
+    private static DataSource resolve(ObjectProvider<DataSource> primary,
+                                      ObjectProvider<DataSource> capsteadDataSource) {
+        DataSource dedicated = capsteadDataSource.getIfAvailable();
+        return dedicated != null ? dedicated : primary.getObject();
     }
 }
