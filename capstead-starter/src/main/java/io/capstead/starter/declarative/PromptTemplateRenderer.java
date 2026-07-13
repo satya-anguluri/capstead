@@ -1,4 +1,4 @@
-package io.capstead.springai;
+package io.capstead.starter.declarative;
 
 import java.util.Map;
 import java.util.regex.Matcher;

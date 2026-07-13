@@ -1,13 +1,13 @@
-package io.capstead.springai;
+package io.capstead.starter.declarative;
 
 import io.capstead.annotation.CapabilityClient;
 import io.capstead.annotation.ModelProfile;
 import io.capstead.annotation.P;
 import io.capstead.annotation.Prompt;
 import io.capstead.annotation.SystemPrompt;
+import io.capstead.runtime.CapabilityModelInvoker;
+import io.capstead.runtime.CapabilityModelRequest;
 
-import org.springframework.ai.chat.client.ChatClient;
-import org.springframework.ai.chat.prompt.ChatOptions;
 import org.springframework.core.annotation.AnnotatedElementUtils;
 
 import java.lang.reflect.InvocationHandler;
@@ -15,31 +15,35 @@ import java.lang.reflect.Method;
 import java.lang.reflect.Parameter;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.function.Supplier;
 
 /**
- * The runtime behind a declarative {@link CapabilityClient}: turns a bodyless capability method into
- * a Spring AI {@code ChatClient} call.
+ * The runtime behind a declarative {@link CapabilityClient}: turns a bodyless capability method into a
+ * single {@link CapabilityModelInvoker} call — provider-neutrally.
  *
  * <p>Per invocation it binds arguments to {@code {{name}}} placeholders, renders the {@link Prompt}
- * (and optional {@link SystemPrompt}), resolves the {@link ModelProfile} to {@code ChatOptions}, calls
- * the model, and binds the response to the method's return type ({@code String} verbatim, otherwise a
- * structured entity). Governance (execution recording, tokens, cost, budget, the execution tree) is
- * applied <em>around</em> this handler by the standard {@code @Capability} AOP advisor — this class
- * only supplies the model-calling body.
+ * (and optional {@link SystemPrompt}), resolves the {@link ModelProfile}, appends an output-format
+ * instruction for structured returns, calls the application's {@code CapabilityModelInvoker}, and binds
+ * the response to the method's return type ({@code String}/{@code void} verbatim, otherwise via
+ * {@link StructuredOutputBinder}). Governance (execution recording, tokens, cost, budget, the execution
+ * tree) is applied <em>around</em> this handler by the standard {@code @Capability} AOP advisor.
  */
 final class CapabilityClientInvocationHandler implements InvocationHandler {
 
     private final Class<?> type;
-    private final ChatClient.Builder chatClientBuilder;
+    private final Supplier<CapabilityModelInvoker> invoker;
     private final ModelProfileProperties profiles;
+    private final StructuredOutputBinder binder;
     private final String defaultProfile;
 
     CapabilityClientInvocationHandler(Class<?> type,
-                                      ChatClient.Builder chatClientBuilder,
-                                      ModelProfileProperties profiles) {
+                                      Supplier<CapabilityModelInvoker> invoker,
+                                      ModelProfileProperties profiles,
+                                      StructuredOutputBinder binder) {
         this.type = type;
-        this.chatClientBuilder = chatClientBuilder;
+        this.invoker = invoker;
         this.profiles = profiles;
+        this.binder = binder;
         this.defaultProfile = resolveInterfaceProfile(type);
     }
 
@@ -60,29 +64,47 @@ final class CapabilityClientInvocationHandler implements InvocationHandler {
         }
 
         Map<String, Object> variables = bindVariables(method, args);
-        String userMessage = PromptTemplateRenderer.render(prompt.value(), variables);
-
-        ChatClient.ChatClientRequestSpec spec = chatClientBuilder.build().prompt();
+        String systemMessage = null;
         SystemPrompt system = AnnotatedElementUtils.findMergedAnnotation(method, SystemPrompt.class);
         if (system != null && !system.value().isBlank()) {
-            spec = spec.system(PromptTemplateRenderer.render(system.value(), variables));
+            systemMessage = PromptTemplateRenderer.render(system.value(), variables);
         }
-        spec = spec.user(userMessage);
-        ChatOptions options = resolveOptions(method);
-        if (options != null) {
-            spec = spec.options(options);
+        String userMessage = PromptTemplateRenderer.render(prompt.value(), variables);
+
+        Class<?> returnType = method.getReturnType();
+        boolean structured = returnType != String.class && returnType != void.class && returnType != Void.class;
+        if (structured) {
+            userMessage = userMessage + "\n\n" + binder.formatInstruction(returnType);
         }
 
-        ChatClient.CallResponseSpec call = spec.call();
-        Class<?> returnType = method.getReturnType();
+        ModelProfileProperties.Profile profile = resolveProfile(method);
+        CapabilityModelRequest request = new CapabilityModelRequest(
+                systemMessage,
+                userMessage,
+                profile != null ? profile.getModel() : null,
+                profile != null ? profile.getTemperature() : null,
+                profile != null ? profile.getMaxTokens() : null,
+                profile != null ? profile.getTopP() : null,
+                returnType,
+                capabilityName(method));
+
+        CapabilityModelInvoker modelInvoker = invoker.get();
+        if (modelInvoker == null) {
+            throw new IllegalStateException(
+                    "No CapabilityModelInvoker bean is available for declarative capability "
+                            + type.getName() + "#" + method.getName()
+                            + ". Declare a CapabilityModelInvoker bean, or add capstead-spring-ai for a "
+                            + "Spring AI ChatClient-backed default.");
+        }
+        String text = modelInvoker.invoke(request);
+
         if (returnType == void.class || returnType == Void.class) {
-            call.content();
             return null;
         }
         if (returnType == String.class) {
-            return call.content();
+            return text;
         }
-        return call.entity(returnType);
+        return binder.bind(text, returnType);
     }
 
     private Map<String, Object> bindVariables(Method method, Object[] args) {
@@ -101,34 +123,18 @@ final class CapabilityClientInvocationHandler implements InvocationHandler {
         return variables;
     }
 
-    private ChatOptions resolveOptions(Method method) {
+    private ModelProfileProperties.Profile resolveProfile(Method method) {
         ModelProfile methodProfile = AnnotatedElementUtils.findMergedAnnotation(method, ModelProfile.class);
         String name = methodProfile != null && !methodProfile.value().isBlank()
                 ? methodProfile.value()
                 : defaultProfile;
-        ModelProfileProperties.Profile profile = profiles == null ? null : profiles.profile(name);
-        if (profile == null) {
-            return null;
-        }
-        ChatOptions.Builder builder = ChatOptions.builder();
-        boolean any = false;
-        if (profile.getModel() != null && !profile.getModel().isBlank()) {
-            builder.model(profile.getModel());
-            any = true;
-        }
-        if (profile.getTemperature() != null) {
-            builder.temperature(profile.getTemperature());
-            any = true;
-        }
-        if (profile.getMaxTokens() != null) {
-            builder.maxTokens(profile.getMaxTokens());
-            any = true;
-        }
-        if (profile.getTopP() != null) {
-            builder.topP(profile.getTopP());
-            any = true;
-        }
-        return any ? builder.build() : null;
+        return profiles == null ? null : profiles.profile(name);
+    }
+
+    private static String capabilityName(Method method) {
+        io.capstead.annotation.Capability capability =
+                AnnotatedElementUtils.findMergedAnnotation(method, io.capstead.annotation.Capability.class);
+        return capability != null ? capability.name() : method.getName();
     }
 
     private static String resolveInterfaceProfile(Class<?> type) {

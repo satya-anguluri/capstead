@@ -1,28 +1,21 @@
-# Declarative Capabilities (Capstead 0.4.0)
+# Declarative Capabilities (Capstead 0.5.0)
 
-> Status: **built and verified end-to-end** on 2026-07-12. Not yet committed or released.
+> Provider-neutral since 0.5.0 — works **with or without Spring AI**.
 
 ## 1. What this feature is
 
-Capstead started as a **governance/observability layer** that wraps *hand-written* `@Capability`
-methods. Declarative capabilities flip that: you annotate an **interface method with no body**, and
-Capstead **synthesizes the implementation** (renders the prompt, routes to a model, calls Spring AI,
-binds the response) — while still governing it through the *existing* machinery.
+Capstead governs *hand-written* `@Capability` methods. Declarative capabilities flip that: you
+annotate a **bodyless interface method** with a prompt, and Capstead **synthesizes the
+implementation** (renders the prompt, routes to a model via your invoker, binds the response) — while
+governing it through the *existing* machinery (catalog, scorecard, cost, budgets, dashboard, MCP).
 
-The tagline: **~90% less infrastructure code.**
-
-### Before Capstead
+### Before
 ```java
-ChatClient chatClient = ...;
-String prompt = "...";
-
-Lesson lesson = chatClient.prompt()
-    .user(prompt)
-    .call()
-    .entity(Lesson.class);
+ChatClient chatClient = ...;                 // or your own LLM client
+Lesson lesson = chatClient.prompt().user(prompt).call().entity(Lesson.class);
 ```
 
-### After Capstead
+### After
 ```java
 @CapabilityClient
 @ModelProfile("reasoning")
@@ -34,56 +27,72 @@ public interface LessonCapability {
 }
 ```
 
-Because the generated method is still a `@Capability`, it appears on the **dashboard, scorecard,
-execution drill-down, catalog, and domain grouping** with **model / tokens / cost** — identical to a
-hand-written capability. Nothing extra to wire.
+## 2. The design: a provider-neutral SPI
 
-## 2. The key design decision
+The proxy does **not** talk to a model directly. It calls a single application-provided bean:
 
-The declarative proxy **only supplies the model-calling body**. Governance (execution recording,
-budget enforcement, cost pricing, the parent/child execution tree) is applied *around* it by the
-**standard `@Capability` AOP advisor** — the same advisor that wraps hand-written capabilities.
+```java
+// io.capstead.runtime
+@FunctionalInterface
+public interface CapabilityModelInvoker {
+    String invoke(CapabilityModelRequest request);   // return the model's raw text
+}
+```
+
+Capstead owns everything provider-agnostic — prompt rendering, profile resolution, output binding, and
+governance — and delegates only the actual model call:
 
 ```
 caller
-  └─ Spring AOP proxy (capability advisor)      ← opens execution, times, prices, publishes
-       └─ JDK dynamic proxy (this feature)       ← renders prompt, routes model, calls ChatClient
-            └─ Spring AI ChatClient → ChatModel  ← observation bridge enriches tokens/model
+  └─ Spring AOP proxy (capability advisor)   ← opens execution, times, prices, publishes
+       └─ JDK dynamic proxy (this feature)    ← render prompt, resolve profile, bind output
+            └─ CapabilityModelInvoker (yours) ← the only model-specific code
 ```
 
-This means we did **not** reimplement recording — declarative capabilities are governed for free.
+This means declarative capabilities work with **any** backend, and Capstead never hard-depends on a
+model SDK.
 
-## 3. What was built
+## 3. How each project wires the model
 
-### New annotations (`capstead-annotations`)
-| Annotation | Target | Purpose |
-|---|---|---|
-| `@CapabilityClient` | interface (TYPE) | Marks an interface as a declarative capability client. Optional `profile()` sets a default model profile for all methods. |
-| `@Prompt` | method | The user-message template, with `{{name}}` placeholders. |
-| `@SystemPrompt` | method | Optional system-message template (same placeholders). |
-| `@ModelProfile` | method or interface | Selects a model profile (`capstead.ai.profiles.<name>`). Method beats interface. |
-| `@P` | parameter | Binds a parameter to a specific `{{name}}` placeholder (default is the parameter name). |
+**Not using Spring AI** — implement one method:
+```java
+@Bean
+CapabilityModelInvoker modelInvoker(MyLlmClient llm) {           // LangChain4j, an SDK, raw HTTP…
+    return req -> llm.complete(req.model(), req.systemPrompt(), req.userPrompt());
+}
+```
 
-### New runtime (`capstead-spring-ai`)
+**Using Spring AI** — add `capstead-spring-ai`; a default `SpringAiCapabilityModelInvoker`
+(`ChatClient`-backed) is auto-registered when a `ChatClient.Builder` bean exists. No bean needed.
+Provide your own `CapabilityModelInvoker` to override it (`@ConditionalOnMissingBean`).
+
+## 4. What was built
+
+### Annotations (`capstead-annotations`, dependency-free)
+`@CapabilityClient` (interface), `@Prompt`, `@SystemPrompt`, `@ModelProfile` (method/interface), `@P`.
+
+### SPI (`capstead-runtime`, no Spring AI)
+- `CapabilityModelInvoker` — the one-method model seam.
+- `CapabilityModelRequest` — rendered prompts + resolved model/profile + return type.
+
+### Declarative engine (`capstead-starter`, **no Spring AI**)
 | Class | Responsibility |
 |---|---|
-| `PromptTemplateRenderer` | Tiny dependency-free `{{name}}` renderer (tolerates `{{ spaces }}`; leaves unknown placeholders untouched so partial binding fails visibly). |
-| `ModelProfileProperties` | `@ConfigurationProperties("capstead.ai")` → `Map<String, Profile>`; each `Profile` has `model`, `temperature`, `maxTokens`, `topP`. |
-| `CapabilityClientInvocationHandler` | The core. Binds args → variables, renders `@Prompt`/`@SystemPrompt`, resolves `@ModelProfile` → `ChatOptions`, calls `ChatClient`, binds the return type (`String`/`void` verbatim, else `.entity(type)`). Handles `Object` and `default` methods. |
-| `CapabilityClientFactoryBean<T>` | Creates the JDK dynamic proxy for one client interface; looks up `ChatClient.Builder` + `ModelProfileProperties` lazily. |
-| `CapabilityClientRegistrar` | `BeanDefinitionRegistryPostProcessor` that scans the app's auto-configuration base packages for `@CapabilityClient` interfaces and registers one factory bean per interface — no `@Enable` needed (Spring Data-style). |
-| `DeclarativeCapabilityCatalogRegistrar` | `SmartInitializingSingleton` that registers each declarative `@Capability` into the `CapabilityRegistry` so it shows in `/actuator/capabilities` + domain cards (regular discovery can't see proxy methods). |
-| `CapsteadDeclarativeAutoConfiguration` | `@AutoConfiguration @ConditionalOnClass(ChatClient.class)`; wires the scanner + catalog registrar and enables `ModelProfileProperties`. Added to `AutoConfiguration.imports`. |
+| `PromptTemplateRenderer` | `{{name}}` renderer (tolerates whitespace; leaves unknown placeholders). |
+| `ModelProfileProperties` | `@ConfigurationProperties("capstead.ai")` → `Map<String, Profile>` (model, temperature, maxTokens, topP). |
+| `StructuredOutputBinder` | Appends a JSON format instruction for non-`String` returns; strips fences and binds via Jackson. |
+| `CapabilityClientInvocationHandler` | Renders prompts, resolves profile, calls the `CapabilityModelInvoker`, binds the return type. |
+| `CapabilityClientFactoryBean<T>` | Creates the JDK proxy per interface; resolves invoker/profiles/binder lazily. |
+| `CapabilityClientRegistrar` | Scans auto-config base packages for `@CapabilityClient` interfaces (no `@Enable`). |
+| `DeclarativeCapabilityCatalogRegistrar` | Registers declarative caps into the catalog / domain grouping. |
+| `CapsteadDeclarativeAutoConfiguration` | Wires the above; enables `ModelProfileProperties`. Always on (no Spring AI condition). |
 
-### Dependency change
-`capstead-spring-ai/pom.xml` adds **`spring-ai-client-chat`** (optional — provides `ChatClient`) and
-`spring-boot-configuration-processor` (optional). The declarative auto-config is gated on
-`ChatClient` being present, so the observation bridge alone still works without it.
+### Spring AI default (`capstead-spring-ai`, optional)
+- `SpringAiCapabilityModelInvoker implements CapabilityModelInvoker` — `ChatClient`-backed, returns raw text.
+- `CapsteadSpringAiInvokerAutoConfiguration` — registers it `@ConditionalOnClass(ChatClient)` +
+  `@ConditionalOnBean(ChatClient.Builder)` + `@ConditionalOnMissingBean(CapabilityModelInvoker)`.
 
-## 4. Configuration — model profiles
-
-Profiles decouple capability code from concrete model names, so routing changes via config:
-
+## 5. Configuration — model profiles
 ```yaml
 capstead:
   ai:
@@ -91,65 +100,32 @@ capstead:
       reasoning: { model: us.anthropic.claude-sonnet-4-6, temperature: 0.2 }
       fast:      { model: amazon.nova-pro, max-tokens: 512 }
 ```
+`@ModelProfile("reasoning")` sets `request.model()`/`temperature()`/… for that call. Absent/unconfigured
+→ the invoker's own default.
 
-`@ModelProfile("reasoning")` → applies `model` + `temperature` as Spring AI `ChatOptions` for that
-call. If the profile is absent or unconfigured, the application's default Spring AI model is used.
+## 6. Output binding
+- `String` / `void` return → the model text verbatim (or ignored).
+- Any other type → Capstead appends a JSON format instruction, then `StructuredOutputBinder` strips
+  markdown fences, extracts the JSON body, and maps it to the return type with Jackson. No Spring AI
+  converter involved, so it works for every backend.
 
-## 5. Parameter binding & templates
-
-- Parameters bind to `{{name}}` **by compiled parameter name** (Spring Boot enables `-parameters`
-  by default) or explicitly via `@P("name")`.
-- Templates use `{{topic}}` (Mustache-style). Multi-line prompts use Java text blocks.
-- Return type drives output binding: `String`/`void` return the raw content; any other type is bound
-  via Spring AI's structured-output converter (`.entity(type)`).
-
-## 6. The sample (clone-and-run, no API keys)
-
-`capstead/samples` gained a real declarative capability:
-
+## 7. The sample (clone-and-run, **no Spring AI, no API keys**)
+`capstead/samples` depends on **only** `capstead-starter`. It declares:
 - `QuizCapability` — `@CapabilityClient @ModelProfile("reasoning") @Prompt(...) Quiz execute(String topic)`.
-- `Quiz` — the structured return record.
-- `StubChatModel` — a canned Spring AI `ChatModel` that returns fixed JSON and records the model +
-  token usage, so the demo runs **without any API keys**.
-- `SampleApplication` declares `@Bean ChatClient.Builder chatClientBuilder(ChatModel)` (avoids needing
-  a Spring AI auto-configure starter).
-- `application.yml` adds `capstead.ai.profiles`.
-- `DemoRunner` exercises it at startup; `GET /demo/quiz?topic=...` triggers it on demand.
+- `StubModelInvoker implements CapabilityModelInvoker` — returns canned JSON and records model/token
+  usage. This is exactly the one-method bean a real project writes.
 
-### Verified live
-- **Catalog** (`/actuator/capabilities`) lists `Generate Quiz` — domain `Learning`, owner `Content Team`.
-- **Scorecard** shows it with `claude-sonnet`, real token counts, and a priced cost.
-- **Drill-down** (`/actuator/capabilityscorecard/Generate%20Quiz`) returns per-execution model/tokens/cost.
+Verified live: `Generate Quiz` appears in `/actuator/capabilities` (domain `Learning`), the scorecard
+prices it (`claude-sonnet`), and `GET /demo/quiz?topic=…` binds the `Quiz` record — all with zero
+Spring AI on the classpath.
 
-## 7. Tests
+## 8. Tests
+- `capstead-starter`: `PromptTemplateRendererTest`, `StructuredOutputBinderTest`,
+  `CapabilityClientInvocationHandlerTest` (fake `CapabilityModelInvoker`).
+- `capstead-spring-ai`: `SpringAiCapabilityModelInvokerTest` (Mockito `ChatModel`).
+- Full reactor `mvn clean install` at 0.5.0 → BUILD SUCCESS.
 
-- `PromptTemplateRendererTest` (5) — binding, whitespace, unknown placeholders, null handling.
-- `CapabilityClientInvocationHandlerTest` (3) — Mockito `ChatModel` + `ArgumentCaptor<Prompt>`:
-  prompt rendering, entity binding, profile→model routing, raw `String` return, `@P`, `@SystemPrompt`,
-  and no-options-when-unconfigured.
-- Full reactor `mvn clean install` at **0.4.0** → BUILD SUCCESS (MySQL testcontainers still skipped
-  without Docker).
-
-## 8. Bugs found during build (and fixed)
-
-1. **`ClassUtils.getAllInterfacesForClass(iface)` returns *super*-interfaces, not the interface
-   itself.** The catalog registrar missed declarative capabilities because a proxy bean's type *is*
-   the client interface. Fix: also check `beanType` itself when it is a `@CapabilityClient` interface.
-
-2. **`@ConditionalOnBean(CapabilityRegistry)` is auto-configuration-order-sensitive.** The declarative
-   auto-config was evaluated before the starter registered `CapabilityRegistry`, so the catalog
-   registrar bean was never created (recording still worked via the scanner, so the bug was silent —
-   scorecards populated but the catalog entry was missing). Fix: drop `@ConditionalOnBean` and resolve
-   `CapabilityRegistry` **lazily** via `getBeanProvider(...).getIfAvailable()` at
-   `afterSingletonsInstantiated` time.
-
-## 9. Versioning & next steps
-
-This is **0.4.0** (a feature — correct semver). 0.4.0 also carries the **domain-grouping dashboard
-cards** built earlier (never cut as 0.3.4).
-
-Remaining to ship:
-1. Commit + release-deploy 0.4.0 → **Publish** in the Central Portal.
-2. README / docs update for declarative capabilities.
-3. `v0.4.0` GitHub release.
-4. Bump `order-service` `0.3.2 → 0.4.0` and redeploy prod.
+## 9. Positioning
+Declarative capabilities are a **convenience** on top of Capstead's real value — governance. The SPI
+keeps Capstead decoupled from any model framework: it *governs* whatever produces the text, rather than
+competing with Spring AI's or LangChain4j's prompt/binding features.

@@ -1,4 +1,4 @@
-package io.capstead.springai;
+package io.capstead.starter.declarative;
 
 import io.capstead.annotation.CapabilityClient;
 

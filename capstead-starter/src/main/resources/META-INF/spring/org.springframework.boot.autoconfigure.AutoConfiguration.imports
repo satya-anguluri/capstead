@@ -1,2 +1,3 @@
 io.capstead.starter.CapsteadAutoConfiguration
 io.capstead.starter.CapsteadMetricsAutoConfiguration
+io.capstead.starter.declarative.CapsteadDeclarativeAutoConfiguration

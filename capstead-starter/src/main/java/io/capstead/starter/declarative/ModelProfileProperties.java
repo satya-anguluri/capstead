@@ -1,4 +1,4 @@
-package io.capstead.springai;
+package io.capstead.starter.declarative;
 
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
@@ -9,9 +9,9 @@ import java.util.Map;
  * Named model profiles for declarative capabilities, bound from {@code capstead.ai.profiles.*}.
  *
  * <p>A {@code @ModelProfile("reasoning")} on a capability method resolves to the {@code reasoning}
- * entry here, and its {@code model}/{@code temperature}/… are applied as Spring AI
- * {@code ChatOptions} for that call. Profiles decouple capability code from concrete model names, so
- * routing can change via configuration without touching the capability.
+ * entry here, and its {@code model}/{@code temperature}/… are passed to the
+ * {@link io.capstead.runtime.CapabilityModelInvoker} for that call. Profiles decouple capability code
+ * from concrete model names, so routing can change via configuration without touching the capability.
  *
  * <pre>{@code
  * capstead:
@@ -43,7 +43,7 @@ public class ModelProfileProperties {
     /** A single model profile: the concrete model and optional sampling/limit overrides. */
     public static class Profile {
 
-        /** The concrete model identifier passed to the provider (e.g. {@code amazon.nova-pro}). */
+        /** The concrete model identifier passed to the invoker (e.g. {@code amazon.nova-pro}). */
         private String model;
 
         /** Optional sampling temperature. */

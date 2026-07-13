@@ -133,7 +133,16 @@ capstead:
       reasoning: { model: us.anthropic.claude-sonnet-4-6, temperature: 0.2 }
 ```
 
-Requires `capstead-spring-ai` and Spring AI's `ChatClient`. Full guide: [`docs/DECLARATIVE-CAPABILITIES.md`](docs/DECLARATIVE-CAPABILITIES.md).
+**Works with any model backend — no Spring AI required.** Capstead calls a single `CapabilityModelInvoker` bean; you supply it (LangChain4j, a provider SDK, a plain HTTP client), or add `capstead-spring-ai` for a default Spring AI `ChatClient` implementation:
+
+```java
+@Bean
+CapabilityModelInvoker modelInvoker(MyLlmClient llm) {
+    return req -> llm.complete(req.model(), req.systemPrompt(), req.userPrompt());
+}
+```
+
+Full guide: [`docs/DECLARATIVE-CAPABILITIES.md`](docs/DECLARATIVE-CAPABILITIES.md).
 
 If a method is declared **more than one** way, the **annotation wins**. There's also rule-based `capstead.scan` to promote many methods at once by package + name pattern. See a runnable example using every style in [`samples/`](samples/).
 
@@ -147,7 +156,7 @@ Capstead does **not** measure tokens itself — it *attributes* Spring AI's exis
 <dependency>
     <groupId>io.capstead</groupId>
     <artifactId>capstead-spring-ai</artifactId>
-    <version>0.3.3</version>
+    <version>0.5.0</version>
 </dependency>
 ```
 
@@ -284,8 +293,8 @@ No annotations, no code edits — each method becomes a governed, scored, budget
 | `capstead-annotations` | `@Capability`, `@DailyBudget` — dependency-free |
 | `capstead-core` | Public model: `CapabilityMetadata`, `CapabilityExecution`, `CapabilityScorecard` |
 | `capstead-runtime` | Registry, discovery, execution capture, cost, budgets |
-| `capstead-starter` | Spring Boot auto-configuration + actuator endpoints + dashboard |
-| `capstead-spring-ai` | Optional: **declarative capabilities** (`@CapabilityClient`) + token/model attribution from Spring AI observations |
+| `capstead-starter` | Spring Boot auto-configuration + actuator endpoints + dashboard + **declarative capabilities** (`@CapabilityClient`, provider-neutral) |
+| `capstead-spring-ai` | Optional: token/model attribution from Spring AI observations + a default Spring AI `ChatClient` model invoker for declarative capabilities |
 | `capstead-mcp` | Optional: export capabilities as MCP tools + `/actuator/capabilitymcp` |
 | `capstead-mcp-server` | Optional: serve capabilities over a live MCP server via Spring AI `ToolCallbackProvider` |
 | `capstead-jdbc` | Optional: durable, cross-instance execution + model-invocation persistence with retention |
@@ -303,7 +312,7 @@ No annotations, no code edits — each method becomes a governed, scored, budget
 
 ## Status
 
-`0.4.0`. The open-source core is complete and tested: registry, metadata, versioning, discovery, first-class executions with **per-model invocations and parent-child execution trees**, cost estimation, daily budgets, actuator endpoints (catalog, scorecard, metrics, **execution history**), a dashboard, the Spring AI bridge, **declarative capabilities** (`@CapabilityClient` — Capstead writes and governs the implementation), MCP export (tool model, actuator, and Spring AI MCP server bridge), and an optional **JDBC recorder** for durable, cross-instance history with retention.
+`0.5.0`. The open-source core is complete and tested: registry, metadata, versioning, discovery, first-class executions with **per-model invocations and parent-child execution trees**, cost estimation, daily budgets, actuator endpoints (catalog, scorecard, metrics, **execution history**), a dashboard, the Spring AI bridge, **provider-neutral declarative capabilities** (`@CapabilityClient` — works with any model backend via a `CapabilityModelInvoker`), MCP export (tool model, actuator, and Spring AI MCP server bridge), and an optional **JDBC recorder** for durable, cross-instance history with retention.
 
 ## License
 

@@ -7,7 +7,7 @@
     <parent>
         <groupId>io.capstead</groupId>
         <artifactId>capstead-parent</artifactId>
-        <version>0.4.0</version>
+        <version>0.5.0</version>
     </parent>
 
     <artifactId>capstead-starter</artifactId>
@@ -22,6 +22,11 @@
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-autoconfigure</artifactId>
+        </dependency>
+        <!-- Jackson binds declarative-capability structured output (JSON -> return type). -->
+        <dependency>
+            <groupId>com.fasterxml.jackson.core</groupId>
+            <artifactId>jackson-databind</artifactId>
         </dependency>
         <!-- Actuator is optional: the endpoint is only wired when it is on the classpath. -->
         <dependency>

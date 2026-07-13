@@ -1,6 +1,9 @@
-package io.capstead.springai;
+package io.capstead.starter.declarative;
 
-import org.springframework.ai.chat.client.ChatClient;
+import com.fasterxml.jackson.databind.ObjectMapper;
+
+import io.capstead.runtime.CapabilityModelInvoker;
+
 import org.springframework.beans.factory.FactoryBean;
 import org.springframework.context.ApplicationContext;
 import org.springframework.context.ApplicationContextAware;
@@ -12,9 +15,8 @@ import java.lang.reflect.Proxy;
  * interface. One factory bean is registered per discovered interface by {@link CapabilityClientRegistrar}.
  *
  * <p>The proxy is a normal Spring bean, so the standard {@code @Capability} AOP advisor wraps it and
- * records executions — the factory only wires the model-calling {@link CapabilityClientInvocationHandler}.
- * Collaborators are looked up lazily so this factory imposes no ordering constraints during context
- * startup.
+ * records executions. Collaborators — including the application's {@link CapabilityModelInvoker} — are
+ * resolved lazily, so the model backend can be defined in any module and in any order.
  */
 public class CapabilityClientFactoryBean<T> implements FactoryBean<T>, ApplicationContextAware {
 
@@ -37,11 +39,15 @@ public class CapabilityClientFactoryBean<T> implements FactoryBean<T>, Applicati
     @Override
     @SuppressWarnings("unchecked")
     public T getObject() {
-        ChatClient.Builder builder = applicationContext.getBean(ChatClient.Builder.class);
-        ModelProfileProperties props = applicationContext.getBeanProvider(ModelProfileProperties.class)
+        ModelProfileProperties profiles = applicationContext.getBeanProvider(ModelProfileProperties.class)
                 .getIfAvailable(ModelProfileProperties::new);
-        CapabilityClientInvocationHandler handler =
-                new CapabilityClientInvocationHandler(type, builder, props);
+        StructuredOutputBinder binder = applicationContext.getBeanProvider(StructuredOutputBinder.class)
+                .getIfAvailable(() -> new StructuredOutputBinder(new ObjectMapper()));
+        CapabilityClientInvocationHandler handler = new CapabilityClientInvocationHandler(
+                type,
+                () -> applicationContext.getBeanProvider(CapabilityModelInvoker.class).getIfAvailable(),
+                profiles,
+                binder);
         return (T) Proxy.newProxyInstance(type.getClassLoader(), new Class<?>[]{type}, handler);
     }
 

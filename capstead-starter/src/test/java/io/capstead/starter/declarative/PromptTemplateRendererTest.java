@@ -1,4 +1,4 @@
-package io.capstead.springai;
+package io.capstead.starter.declarative;
 
 import org.junit.jupiter.api.Test;
 
@@ -11,15 +11,13 @@ class PromptTemplateRendererTest {
 
     @Test
     void bindsNamedPlaceholders() {
-        Map<String, Object> vars = Map.of("topic", "Java Streams");
-        assertThat(PromptTemplateRenderer.render("Generate a lesson for {{topic}}", vars))
+        assertThat(PromptTemplateRenderer.render("Generate a lesson for {{topic}}", Map.of("topic", "Java Streams")))
                 .isEqualTo("Generate a lesson for Java Streams");
     }
 
     @Test
     void toleratesWhitespaceAndMultipleVars() {
-        Map<String, Object> vars = Map.of("a", "1", "b", 2);
-        assertThat(PromptTemplateRenderer.render("{{ a }}-{{b}}", vars)).isEqualTo("1-2");
+        assertThat(PromptTemplateRenderer.render("{{ a }}-{{b}}", Map.of("a", "1", "b", 2))).isEqualTo("1-2");
     }
 
     @Test

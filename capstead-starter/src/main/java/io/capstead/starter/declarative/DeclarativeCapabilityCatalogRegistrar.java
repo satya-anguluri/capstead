@@ -1,4 +1,4 @@
-package io.capstead.springai;
+package io.capstead.starter.declarative;
 
 import io.capstead.annotation.Capability;
 import io.capstead.annotation.CapabilityClient;
@@ -24,8 +24,8 @@ import java.util.Set;
  *
  * <p>Standard {@code CapabilityDiscovery} cannot see these: a JDK proxy's methods do not carry the
  * interface's annotations. This registrar closes that gap by reading the {@code @Capability} metadata
- * straight off the client interface. It runs after all singletons are created and is idempotent
- * (coordinates already present are skipped), so it never conflicts with regular discovery.
+ * straight off the client interface. It runs after all singletons are created, resolves the registry
+ * lazily (so auto-configuration ordering is irrelevant), and is idempotent.
  */
 public class DeclarativeCapabilityCatalogRegistrar implements SmartInitializingSingleton {
 

@@ -1,2 +1,2 @@
 io.capstead.springai.CapsteadSpringAiAutoConfiguration
-io.capstead.springai.CapsteadDeclarativeAutoConfiguration
+io.capstead.springai.CapsteadSpringAiInvokerAutoConfiguration
