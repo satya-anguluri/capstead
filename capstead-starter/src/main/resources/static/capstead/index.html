@@ -19,6 +19,10 @@
         .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:16px 20px; min-width:180px; }
         .card .label { color:var(--muted); font-size:12px; text-transform:uppercase; letter-spacing:.5px; }
         .card .value { font-size:26px; font-weight:600; margin-top:6px; }
+        .card .value.sm { font-size:20px; }
+        .card.click { cursor:pointer; transition:border-color .15s, box-shadow .15s; }
+        .card.click:hover { border-color:var(--accent); }
+        .card.active { border-color:var(--accent); box-shadow:0 0 0 1px var(--accent) inset; }
         table { width:100%; border-collapse:collapse; background:var(--card); border:1px solid var(--line); border-radius:12px; overflow:hidden; }
         th, td { text-align:left; padding:12px 16px; border-bottom:1px solid var(--line); white-space:nowrap; }
         th { color:var(--muted); font-weight:600; font-size:12px; text-transform:uppercase; letter-spacing:.5px; }
@@ -48,6 +52,7 @@
 </header>
 <main>
     <div class="cards" id="summary"></div>
+    <div class="cards" id="domains"></div>
     <div id="content"></div>
 </main>
 <script>
@@ -67,6 +72,36 @@
     const modelTags = models => (!models || !models.length)
         ? '<span class="muted">\u2014</span>'
         : models.map(m => `<span class="tag">${esc(m)}</span>`).join('');
+
+    let STATE = { scorecards: [], catalog: [], domain: null };
+
+    function domainSummary(catalog) {
+        const counts = {};
+        (catalog || []).forEach(m => {
+            const d = (m.domain && String(m.domain).trim()) ? m.domain : 'Ungrouped';
+            counts[d] = (counts[d] || 0) + 1;
+        });
+        return Object.keys(counts).sort((a, b) => counts[b] - counts[a]).map(d => ({ domain: d, count: counts[d] }));
+    }
+
+    function renderDomains(catalog) {
+        const el = document.getElementById('domains');
+        const groups = domainSummary(catalog);
+        if (!groups.length) { el.innerHTML = ''; return; }
+        el.innerHTML = groups.map(g => {
+            const active = STATE.domain === g.domain ? ' active' : '';
+            const noun = g.count === 1 ? 'Capability' : 'Capabilities';
+            return `<div class="card click domain${active}" data-domain="${esc(g.domain)}">`
+                + `<div class="label">${esc(g.domain)}</div>`
+                + `<div class="value sm">${g.count} ${noun}</div></div>`;
+        }).join('');
+        el.querySelectorAll('.card.domain').forEach(c =>
+            c.addEventListener('click', () => {
+                const d = c.getAttribute('data-domain');
+                STATE.domain = (STATE.domain === d) ? null : d;
+                render(STATE.scorecards, STATE.catalog);
+            }));
+    }
 
     function health(rate) {
         if (rate >= 0.99) return '<span class="pill ok">Healthy</span>';
@@ -89,6 +124,7 @@
         const meta = indexMeta(catalog);
         const content = document.getElementById('content');
         const summary = document.getElementById('summary');
+        renderDomains(catalog);
 
         if (!scorecards || scorecards.length === 0) {
             summary.innerHTML = '';
@@ -97,17 +133,30 @@
             return;
         }
 
-        const totalCalls = scorecards.reduce((a, s) => a + (s.invocations || 0), 0);
-        const totalCost = scorecards.reduce((a, s) => a + Number(s.totalCost || 0), 0);
-        const avgSuccess = scorecards.reduce((a, s) => a + (s.successRate || 0), 0) / scorecards.length;
+        const domainOf = s => {
+            const m = meta[(s.name || '') + '@' + (s.version || '')] || {};
+            return (m.domain && String(m.domain).trim()) ? m.domain : 'Ungrouped';
+        };
+        const visible = STATE.domain ? scorecards.filter(s => domainOf(s) === STATE.domain) : scorecards;
+
+        if (visible.length === 0) {
+            summary.innerHTML = '';
+            content.innerHTML = '<div class="empty">No executions recorded for <code>' + esc(STATE.domain)
+                + '</code> yet.</div>';
+            return;
+        }
+
+        const totalCalls = visible.reduce((a, s) => a + (s.invocations || 0), 0);
+        const totalCost = visible.reduce((a, s) => a + Number(s.totalCost || 0), 0);
+        const avgSuccess = visible.reduce((a, s) => a + (s.successRate || 0), 0) / visible.length;
 
         summary.innerHTML = `
-            <div class="card"><div class="label">Capabilities</div><div class="value">${scorecards.length}</div></div>
+            <div class="card"><div class="label">Capabilities</div><div class="value">${visible.length}</div></div>
             <div class="card"><div class="label">Total Invocations</div><div class="value">${fmtInt(totalCalls)}</div></div>
             <div class="card"><div class="label">Avg Success</div><div class="value">${fmtPct(avgSuccess)}</div></div>
             <div class="card"><div class="label">Total Cost</div><div class="value">${fmtUsd(totalCost)}</div></div>`;
 
-        const rows = scorecards.map(s => {
+        const rows = visible.map(s => {
             const key = (s.name || '') + '@' + (s.version || '');
             const m = meta[key] || {};
             const tokens = (s.avgInputTokens || 0) + (s.avgOutputTokens || 0);
@@ -187,7 +236,9 @@
                 + '<code>management.endpoints.web.exposure.include</code>.</div>';
             return;
         }
-        render(scorecards, catalog);
+        STATE.scorecards = scorecards || [];
+        STATE.catalog = catalog || [];
+        render(STATE.scorecards, STATE.catalog);
     }
 
     document.getElementById('refresh').addEventListener('click', load);

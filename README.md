@@ -90,9 +90,9 @@ management:
 
 ---
 
-## Two ways to declare a capability
+## Three ways to declare a capability
 
-Capstead supports **both** styles — mix and match in the same app.
+Capstead supports **all three** styles — mix and match in the same app.
 
 **1. Annotation** — put `@Capability` on the method (as shown above). Best when you own the code and want the declaration next to it.
 
@@ -111,7 +111,31 @@ capstead:
       # parameter-types: [java.lang.String]   # only to disambiguate overloaded methods
 ```
 
-If a method is declared **both** ways, the **annotation wins**. There's also rule-based `capstead.scan` to promote many methods at once by package + name pattern. See a runnable example using both styles in [`samples/`](samples/).
+**3. Declarative** — write *no body at all*. Annotate an **interface** method with `@Capability` + `@Prompt`, and Capstead generates the implementation (renders the prompt, routes the model, calls Spring AI, binds the result) — then governs it like any other capability:
+
+```java
+@CapabilityClient
+@ModelProfile("reasoning")
+public interface LessonCapability {
+
+    @Capability(name = "Generate Lesson", domain = "Learning")
+    @Prompt("Generate a Java lesson for {{topic}}")
+    Lesson execute(String topic);   // no body — Capstead writes it
+}
+```
+
+Model routing is config-driven via profiles, so capability code never names a model:
+
+```yaml
+capstead:
+  ai:
+    profiles:
+      reasoning: { model: us.anthropic.claude-sonnet-4-6, temperature: 0.2 }
+```
+
+Requires `capstead-spring-ai` and Spring AI's `ChatClient`. Full guide: [`docs/DECLARATIVE-CAPABILITIES.md`](docs/DECLARATIVE-CAPABILITIES.md).
+
+If a method is declared **more than one** way, the **annotation wins**. There's also rule-based `capstead.scan` to promote many methods at once by package + name pattern. See a runnable example using every style in [`samples/`](samples/).
 
 ---
 
@@ -261,7 +285,7 @@ No annotations, no code edits — each method becomes a governed, scored, budget
 | `capstead-core` | Public model: `CapabilityMetadata`, `CapabilityExecution`, `CapabilityScorecard` |
 | `capstead-runtime` | Registry, discovery, execution capture, cost, budgets |
 | `capstead-starter` | Spring Boot auto-configuration + actuator endpoints + dashboard |
-| `capstead-spring-ai` | Optional bridge: token/model attribution from Spring AI observations |
+| `capstead-spring-ai` | Optional: **declarative capabilities** (`@CapabilityClient`) + token/model attribution from Spring AI observations |
 | `capstead-mcp` | Optional: export capabilities as MCP tools + `/actuator/capabilitymcp` |
 | `capstead-mcp-server` | Optional: serve capabilities over a live MCP server via Spring AI `ToolCallbackProvider` |
 | `capstead-jdbc` | Optional: durable, cross-instance execution + model-invocation persistence with retention |
@@ -279,7 +303,7 @@ No annotations, no code edits — each method becomes a governed, scored, budget
 
 ## Status
 
-`0.3.3`. The open-source core is complete and tested: registry, metadata, versioning, discovery, first-class executions with **per-model invocations and parent-child execution trees**, cost estimation, daily budgets, actuator endpoints (catalog, scorecard, metrics, **execution history**), a dashboard, the Spring AI bridge, MCP export (tool model, actuator, and Spring AI MCP server bridge), and an optional **JDBC recorder** for durable, cross-instance history with retention.
+`0.4.0`. The open-source core is complete and tested: registry, metadata, versioning, discovery, first-class executions with **per-model invocations and parent-child execution trees**, cost estimation, daily budgets, actuator endpoints (catalog, scorecard, metrics, **execution history**), a dashboard, the Spring AI bridge, **declarative capabilities** (`@CapabilityClient` — Capstead writes and governs the implementation), MCP export (tool model, actuator, and Spring AI MCP server bridge), and an optional **JDBC recorder** for durable, cross-instance history with retention.
 
 ## License
 

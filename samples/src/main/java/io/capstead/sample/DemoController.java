@@ -11,11 +11,13 @@ public class DemoController {
     private final CourseService courses;
     private final TutorService tutor;
     private final ReportService reports;
+    private final QuizCapability quiz;
 
-    public DemoController(CourseService courses, TutorService tutor, ReportService reports) {
+    public DemoController(CourseService courses, TutorService tutor, ReportService reports, QuizCapability quiz) {
         this.courses = courses;
         this.tutor = tutor;
         this.reports = reports;
+        this.quiz = quiz;
     }
 
     @GetMapping("/demo/course")
@@ -31,5 +33,10 @@ public class DemoController {
     @GetMapping("/demo/report")
     public String report(@RequestParam(defaultValue = "A quarterly summary of AI capability usage.") String text) {
         return reports.summarize(text);
+    }
+
+    @GetMapping("/demo/quiz")
+    public Quiz quiz(@RequestParam(defaultValue = "the Java Stream API") String topic) {
+        return quiz.execute(topic);
     }
 }

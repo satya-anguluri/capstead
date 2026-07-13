@@ -23,6 +23,16 @@ capstead:
         input-per-million-tokens: 0.80
         output-per-million-tokens: 3.20
 
+  # Model profiles for declarative capabilities (@ModelProfile) — decouple capability code from models.
+  ai:
+    profiles:
+      reasoning:
+        model: claude-sonnet
+        temperature: 0.2
+      fast:
+        model: nova-pro
+        max-tokens: 512
+
   # Durable execution recorder settings (all optional; shown for the demo).
   executions:
     recording-mode: best-effort   # best-effort (default) | sync | async

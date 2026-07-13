@@ -7,7 +7,7 @@
     <parent>
         <groupId>io.capstead</groupId>
         <artifactId>capstead-parent</artifactId>
-        <version>0.3.3</version>
+        <version>0.4.0</version>
     </parent>
 
     <artifactId>capstead-spring-ai</artifactId>
@@ -39,9 +39,21 @@
             <groupId>org.springframework.ai</groupId>
             <artifactId>spring-ai-model</artifactId>
         </dependency>
+        <!-- The fluent ChatClient + entity binding behind declarative capabilities. Optional so the
+             observation bridge alone works without it; the declarative auto-config is gated on it. -->
+        <dependency>
+            <groupId>org.springframework.ai</groupId>
+            <artifactId>spring-ai-client-chat</artifactId>
+            <optional>true</optional>
+        </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-autoconfigure</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-configuration-processor</artifactId>
+            <optional>true</optional>
         </dependency>
 
         <!-- Test scope -->
