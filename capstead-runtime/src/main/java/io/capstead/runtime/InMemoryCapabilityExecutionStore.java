@@ -2,15 +2,18 @@ package io.capstead.runtime;
 
 import io.capstead.core.CapabilityExecution;
 import io.capstead.core.CapabilityScorecard;
+import io.capstead.core.ModelInvocation;
 
 import java.math.BigDecimal;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Deque;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 /**
@@ -91,6 +94,7 @@ public class InMemoryCapabilityExecutionStore implements CapabilityExecutionReco
         private double totalInputTokens;
         private double totalOutputTokens;
         private BigDecimal totalCost = BigDecimal.ZERO;
+        private final Set<String> models = new LinkedHashSet<>();
 
         private Aggregate(String name, String version) {
             this.name = name;
@@ -108,6 +112,11 @@ public class InMemoryCapabilityExecutionStore implements CapabilityExecutionReco
             if (execution.estimatedCost() != null) {
                 totalCost = totalCost.add(execution.estimatedCost());
             }
+            for (ModelInvocation invocation : execution.modelInvocations()) {
+                if (invocation.model() != null) {
+                    models.add(invocation.model());
+                }
+            }
         }
 
         private CapabilityScorecard toScorecard() {
@@ -117,7 +126,8 @@ public class InMemoryCapabilityExecutionStore implements CapabilityExecutionReco
             double avgOutput = count == 0 ? 0.0 : totalOutputTokens / count;
             double avgCost = count == 0 ? 0.0 : totalCost.doubleValue() / count;
             return new CapabilityScorecard(
-                    name, version, count, successRate, avgLatency, avgInput, avgOutput, avgCost, totalCost);
+                    name, version, count, successRate, avgLatency, avgInput, avgOutput, avgCost, totalCost,
+                    new ArrayList<>(models));
         }
     }
 }

@@ -11,7 +11,10 @@ import org.springframework.jdbc.core.RowMapper;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Timestamp;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 /**
@@ -77,6 +80,15 @@ public class JdbcCapabilityExecutionReader implements CapabilityExecutionQuery {
             ORDER BY seq
             """;
 
+    private static final String DISTINCT_MODELS = """
+            SELECT e.capability_name, e.version, mi.model
+            FROM capstead_execution e
+            JOIN capstead_model_invocation mi ON e.execution_id = mi.execution_id
+            WHERE mi.model IS NOT NULL
+            GROUP BY e.capability_name, e.version, mi.model
+            ORDER BY e.capability_name, e.version, mi.model
+            """;
+
     private final JdbcTemplate jdbcTemplate;
 
     public JdbcCapabilityExecutionReader(JdbcTemplate jdbcTemplate) {
@@ -85,16 +97,32 @@ public class JdbcCapabilityExecutionReader implements CapabilityExecutionQuery {
 
     /** Aggregated scorecards for every capability seen, across all instances and restarts. */
     public List<CapabilityScorecard> scorecards() {
-        return jdbcTemplate.query(SCORECARDS, (rs, rowNum) -> new CapabilityScorecard(
-                rs.getString("capability_name"),
-                rs.getString("version"),
-                rs.getLong("invocations"),
-                rs.getDouble("success_rate"),
-                rs.getDouble("avg_latency_ms"),
-                rs.getDouble("avg_input_tokens"),
-                rs.getDouble("avg_output_tokens"),
-                rs.getDouble("avg_cost"),
-                rs.getBigDecimal("total_cost")));
+        Map<String, List<String>> modelsByCoordinates = distinctModelsByCoordinates();
+        return jdbcTemplate.query(SCORECARDS, (rs, rowNum) -> {
+            String name = rs.getString("capability_name");
+            String version = rs.getString("version");
+            return new CapabilityScorecard(
+                    name,
+                    version,
+                    rs.getLong("invocations"),
+                    rs.getDouble("success_rate"),
+                    rs.getDouble("avg_latency_ms"),
+                    rs.getDouble("avg_input_tokens"),
+                    rs.getDouble("avg_output_tokens"),
+                    rs.getDouble("avg_cost"),
+                    rs.getBigDecimal("total_cost"),
+                    modelsByCoordinates.getOrDefault(name + "@" + version, List.of()));
+        });
+    }
+
+    /** Distinct model ids used per capability@version, grouped in Java to stay vendor-neutral. */
+    private Map<String, List<String>> distinctModelsByCoordinates() {
+        Map<String, List<String>> models = new LinkedHashMap<>();
+        jdbcTemplate.query(DISTINCT_MODELS, rs -> {
+            String coordinates = rs.getString("capability_name") + "@" + rs.getString("version");
+            models.computeIfAbsent(coordinates, key -> new ArrayList<>()).add(rs.getString("model"));
+        });
+        return models;
     }
 
     /** The durable execution with the given id, with its model invocations rehydrated. */

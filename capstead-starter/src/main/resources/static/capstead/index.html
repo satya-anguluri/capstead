@@ -31,6 +31,12 @@
         .muted { color:var(--muted); }
         .empty { color:var(--muted); padding:40px; text-align:center; }
         code { background:#0c1119; padding:2px 6px; border-radius:6px; color:var(--accent); }
+        tr.clickable { cursor:pointer; }
+        tr.clickable:hover td { background:rgba(91,140,255,.07); }
+        .tag { display:inline-block; padding:1px 8px; margin:2px 4px 2px 0; border-radius:6px; font-size:11px; background:rgba(91,140,255,.14); color:var(--accent); white-space:nowrap; }
+        .back { margin-bottom:16px; }
+        .detail h2 { font-size:18px; margin:0 0 2px; }
+        .detail .sub { color:var(--muted); margin-bottom:16px; }
     </style>
 </head>
 <body>
@@ -50,11 +56,17 @@
     const BASE = (location.pathname.replace(/\/capstead\/?$/, '') || '') ;
     const CATALOG_URL = BASE + '/actuator/capabilities';
     const SCORECARD_URL = BASE + '/actuator/capabilityscorecard';
+    const EXECUTIONS_URL = BASE + '/actuator/capabilityexecutions';
 
     const fmtInt = n => (n ?? 0).toLocaleString();
     const fmtMs = n => (n ?? 0).toFixed(0) + ' ms';
     const fmtPct = r => ((r ?? 1) * 100).toFixed(1) + '%';
     const fmtUsd = n => '$' + Number(n ?? 0).toFixed(4);
+    const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+    const shortId = id => id ? String(id).slice(0, 8) : '';
+    const modelTags = models => (!models || !models.length)
+        ? '<span class="muted">\u2014</span>'
+        : models.map(m => `<span class="tag">${esc(m)}</span>`).join('');
 
     function health(rate) {
         if (rate >= 0.99) return '<span class="pill ok">Healthy</span>';
@@ -99,11 +111,12 @@
             const key = (s.name || '') + '@' + (s.version || '');
             const m = meta[key] || {};
             const tokens = (s.avgInputTokens || 0) + (s.avgOutputTokens || 0);
-            return `<tr>
-                <td>${s.name || ''}</td>
-                <td class="muted">v${s.version || ''}</td>
-                <td>${m.owner || '<span class="muted">—</span>'}</td>
-                <td>${m.domain || '<span class="muted">—</span>'}</td>
+            return `<tr class="clickable" data-name="${esc(s.name)}">
+                <td>${esc(s.name)}</td>
+                <td class="muted">v${esc(s.version)}</td>
+                <td>${m.owner ? esc(m.owner) : '<span class="muted">\u2014</span>'}</td>
+                <td>${m.domain ? esc(m.domain) : '<span class="muted">\u2014</span>'}</td>
+                <td>${modelTags(s.models)}</td>
                 <td class="num">${fmtInt(s.invocations)}</td>
                 <td class="num">${fmtPct(s.successRate)}</td>
                 <td class="num">${fmtMs(s.avgLatencyMs)}</td>
@@ -116,12 +129,53 @@
 
         content.innerHTML = `<table>
             <thead><tr>
-                <th>Capability</th><th>Version</th><th>Owner</th><th>Domain</th>
+                <th>Capability</th><th>Version</th><th>Owner</th><th>Domain</th><th>Models</th>
                 <th class="num">Calls</th><th class="num">Success</th><th class="num">Avg Latency</th>
                 <th class="num">Avg Tokens</th><th class="num">Avg Cost</th><th class="num">Total Cost</th><th>Health</th>
             </tr></thead>
             <tbody>${rows}</tbody>
         </table>`;
+
+        content.querySelectorAll('tr.clickable').forEach(tr =>
+            tr.addEventListener('click', () => openDetail(tr.getAttribute('data-name'))));
+    }
+
+    function execModels(view) {
+        const out = [];
+        (view.modelInvocations || []).forEach(mi => { if (mi.model && !out.includes(mi.model)) out.push(mi.model); });
+        if (!out.length && view.model) out.push(view.model);
+        return out;
+    }
+
+    async function openDetail(name) {
+        const content = document.getElementById('content');
+        document.getElementById('summary').innerHTML = '';
+        content.innerHTML = '<div class="empty">Loading\u2026</div>';
+        const execs = await safeJson(SCORECARD_URL + '/' + encodeURIComponent(name));
+        if (!execs) { content.innerHTML = '<div class="empty">Could not load executions for ' + esc(name) + '.</div>'; return; }
+        const rows = execs.map(v => `<tr>
+            <td>${esc(new Date(v.startedAt).toLocaleString())}</td>
+            <td class="num">${fmtMs(v.durationMs)}</td>
+            <td>${v.success ? '<span class="pill ok">ok</span>' : '<span class="pill bad">' + esc(v.errorType || 'error') + '</span>'}</td>
+            <td>${modelTags(execModels(v))}</td>
+            <td class="num">${fmtInt(v.inputTokens)} / ${fmtInt(v.outputTokens)}</td>
+            <td class="num">${v.estimatedCost != null ? fmtUsd(v.estimatedCost) : '<span class="muted">\u2014</span>'}</td>
+            <td class="muted">${v.parentExecutionId ? 'child of ' + shortId(v.parentExecutionId) : '<code>' + shortId(v.executionId) + '</code>'}</td>
+        </tr>`).join('');
+        content.innerHTML = `
+            <button class="back" id="back">\u2190 All capabilities</button>
+            <div class="detail">
+                <h2>${esc(name)}</h2>
+                <div class="sub">${execs.length} recent execution(s)</div>
+                <table>
+                    <thead><tr>
+                        <th>Started</th><th class="num">Duration</th><th>Outcome</th><th>Model(s)</th>
+                        <th class="num">In / Out Tokens</th><th class="num">Cost</th><th>Execution</th>
+                    </tr></thead>
+                    <tbody>${rows || '<tr><td colspan="7" class="muted">No executions.</td></tr>'}</tbody>
+                </table>
+            </div>`;
+        document.getElementById('back').addEventListener('click', load);
     }
 
     async function load() {
