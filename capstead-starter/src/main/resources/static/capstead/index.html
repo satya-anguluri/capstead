@@ -32,6 +32,7 @@
         .pill.ok { background:rgba(55,214,122,.15); color:var(--ok); }
         .pill.warn { background:rgba(246,195,67,.15); color:var(--warn); }
         .pill.bad { background:rgba(240,90,90,.15); color:var(--bad); }
+        .pill.idle { background:rgba(139,151,179,.15); color:var(--muted); }
         .muted { color:var(--muted); }
         .empty { color:var(--muted); padding:40px; text-align:center; }
         code { background:#0c1119; padding:2px 6px; border-radius:6px; color:var(--accent); }
@@ -121,50 +122,73 @@
     }
 
     function render(scorecards, catalog) {
-        const meta = indexMeta(catalog);
         const content = document.getElementById('content');
         const summary = document.getElementById('summary');
         renderDomains(catalog);
 
-        if (!scorecards || scorecards.length === 0) {
+        // Merge: show EVERY registered capability (catalog), attaching its scorecard when it has executed.
+        const scoreByKey = {};
+        (scorecards || []).forEach(s => { scoreByKey[(s.name || '') + '@' + (s.version || '')] = s; });
+        const rowsData = [];
+        (catalog || []).forEach(m => {
+            const key = (m.name || '') + '@' + (m.version || '');
+            rowsData.push({ meta: m, score: scoreByKey[key] || null, name: m.name, version: m.version,
+                domain: (m.domain && String(m.domain).trim()) ? m.domain : 'Ungrouped' });
+            delete scoreByKey[key];
+        });
+        Object.values(scoreByKey).forEach(s => rowsData.push({ meta: {}, score: s, name: s.name, version: s.version,
+            domain: 'Ungrouped' }));
+
+        if (rowsData.length === 0) {
             summary.innerHTML = '';
-            content.innerHTML = '<div class="empty">No capability executions recorded yet. '
-                + 'Invoke a <code>@Capability</code> method, then refresh.</div>';
+            content.innerHTML = '<div class="empty">No capabilities registered yet. '
+                + 'Add a <code>@Capability</code> and refresh.</div>';
             return;
         }
 
-        const domainOf = s => {
-            const m = meta[(s.name || '') + '@' + (s.version || '')] || {};
-            return (m.domain && String(m.domain).trim()) ? m.domain : 'Ungrouped';
-        };
-        const visible = STATE.domain ? scorecards.filter(s => domainOf(s) === STATE.domain) : scorecards;
-
+        const visible = STATE.domain ? rowsData.filter(r => r.domain === STATE.domain) : rowsData;
         if (visible.length === 0) {
             summary.innerHTML = '';
-            content.innerHTML = '<div class="empty">No executions recorded for <code>' + esc(STATE.domain)
-                + '</code> yet.</div>';
+            content.innerHTML = '<div class="empty">No capabilities in <code>' + esc(STATE.domain) + '</code>.</div>';
             return;
         }
 
-        const totalCalls = visible.reduce((a, s) => a + (s.invocations || 0), 0);
-        const totalCost = visible.reduce((a, s) => a + Number(s.totalCost || 0), 0);
-        const avgSuccess = visible.reduce((a, s) => a + (s.successRate || 0), 0) / visible.length;
+        const executed = visible.filter(r => r.score);
+        const totalCalls = executed.reduce((a, r) => a + (r.score.invocations || 0), 0);
+        const totalCost = executed.reduce((a, r) => a + Number(r.score.totalCost || 0), 0);
+        const avgSuccess = executed.length
+            ? executed.reduce((a, r) => a + (r.score.successRate || 0), 0) / executed.length : 1;
 
         summary.innerHTML = `
             <div class="card"><div class="label">Capabilities</div><div class="value">${visible.length}</div></div>
             <div class="card"><div class="label">Total Invocations</div><div class="value">${fmtInt(totalCalls)}</div></div>
-            <div class="card"><div class="label">Avg Success</div><div class="value">${fmtPct(avgSuccess)}</div></div>
+            <div class="card"><div class="label">Avg Success</div><div class="value">${executed.length ? fmtPct(avgSuccess) : '\u2014'}</div></div>
             <div class="card"><div class="label">Total Cost</div><div class="value">${fmtUsd(totalCost)}</div></div>`;
 
-        const rows = visible.map(s => {
-            const key = (s.name || '') + '@' + (s.version || '');
-            const m = meta[key] || {};
+        const dash = '<span class="muted">\u2014</span>';
+        const rows = visible.map(r => {
+            const s = r.score;
+            const m = r.meta || {};
+            const ownerCell = m.owner ? esc(m.owner) : dash;
+            const domainCell = m.domain ? esc(m.domain) : dash;
+            if (!s) {
+                return `<tr class="clickable" data-name="${esc(r.name)}">
+                    <td>${esc(r.name)}</td>
+                    <td class="muted">v${esc(r.version)}</td>
+                    <td>${ownerCell}</td>
+                    <td>${domainCell}</td>
+                    <td>${dash}</td>
+                    <td class="num">${dash}</td><td class="num">${dash}</td><td class="num">${dash}</td>
+                    <td class="num">${dash}</td><td class="num">${dash}</td><td class="num">${dash}</td>
+                    <td><span class="pill idle">No runs</span></td>
+                </tr>`;
+            }
             const tokens = (s.avgInputTokens || 0) + (s.avgOutputTokens || 0);
-            return `<tr class="clickable" data-name="${esc(s.name)}">
-                <td>${esc(s.name)}</td>
-                <td class="muted">v${esc(s.version)}</td>
-                <td>${m.owner ? esc(m.owner) : '<span class="muted">\u2014</span>'}</td>
-                <td>${m.domain ? esc(m.domain) : '<span class="muted">\u2014</span>'}</td>
+            return `<tr class="clickable" data-name="${esc(r.name)}">
+                <td>${esc(r.name)}</td>
+                <td class="muted">v${esc(r.version)}</td>
+                <td>${ownerCell}</td>
+                <td>${domainCell}</td>
                 <td>${modelTags(s.models)}</td>
                 <td class="num">${fmtInt(s.invocations)}</td>
                 <td class="num">${fmtPct(s.successRate)}</td>
@@ -211,17 +235,25 @@
             <td class="num">${v.estimatedCost != null ? fmtUsd(v.estimatedCost) : '<span class="muted">\u2014</span>'}</td>
             <td class="muted">${v.parentExecutionId ? 'child of ' + shortId(v.parentExecutionId) : '<code>' + shortId(v.executionId) + '</code>'}</td>
         </tr>`).join('');
+        const cap = (STATE.catalog || []).find(m => (m.name || '') === name) || {};
+        const metaBits = [];
+        if (cap.domain) metaBits.push(esc(cap.domain));
+        if (cap.owner) metaBits.push('owned by ' + esc(cap.owner));
+        metaBits.push(esc(cap.version ? 'v' + cap.version : ''));
+        const subtitle = execs.length
+            ? execs.length + ' recent execution(s)'
+            : 'No executions recorded yet \u2014 invoke this capability to see runs.';
         content.innerHTML = `
             <button class="back" id="back">\u2190 All capabilities</button>
             <div class="detail">
                 <h2>${esc(name)}</h2>
-                <div class="sub">${execs.length} recent execution(s)</div>
+                <div class="sub">${metaBits.filter(Boolean).join(' \u00b7 ')}${metaBits.filter(Boolean).length ? ' \u00b7 ' : ''}${subtitle}</div>
                 <table>
                     <thead><tr>
                         <th>Started</th><th class="num">Duration</th><th>Outcome</th><th>Model(s)</th>
                         <th class="num">In / Out Tokens</th><th class="num">Cost</th><th>Execution</th>
                     </tr></thead>
-                    <tbody>${rows || '<tr><td colspan="7" class="muted">No executions.</td></tr>'}</tbody>
+                    <tbody>${rows || '<tr><td colspan="7" class="muted">No executions recorded yet.</td></tr>'}</tbody>
                 </table>
             </div>`;
         document.getElementById('back').addEventListener('click', load);
