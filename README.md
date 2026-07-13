@@ -32,7 +32,7 @@ Modern apps expose AI capabilities across many services and teams, and nobody ca
 <dependency>
     <groupId>io.capstead</groupId>
     <artifactId>capstead-starter</artifactId>
-    <version>0.3.0</version>
+    <version>0.3.1</version>
 </dependency>
 ```
 
@@ -123,7 +123,7 @@ Capstead does **not** measure tokens itself — it *attributes* Spring AI's exis
 <dependency>
     <groupId>io.capstead</groupId>
     <artifactId>capstead-spring-ai</artifactId>
-    <version>0.3.0</version>
+    <version>0.3.1</version>
 </dependency>
 ```
 
@@ -149,7 +149,7 @@ Now every capability's scorecard shows real token counts and estimated cost — 
 
 ## Durable execution recorder
 
-Every `@Capability` call becomes a first-class `CapabilityExecution` with a unique id — the atom every scorecard, budget and dashboard is built on. In `0.3.0` the recorder became **durable and structured**:
+Every `@Capability` call becomes a first-class `CapabilityExecution` with a unique id — the atom every scorecard, budget and dashboard is built on. In `0.3.1` the recorder became **durable and structured**:
 
 - **Per-model invocations.** A capability may call the model several times (retries, multi-step, fan-out). Each call is captured as a `ModelInvocation` (model, tokens, cost, timestamp), so cost is attributed *per model* — not just per capability. Token/cost totals are summed across invocations.
 - **Execution trees.** When one `@Capability` calls another, the nested execution is linked to its parent automatically (`parentExecutionId`) — an execution tree with no workflow engine.
@@ -169,7 +169,7 @@ The in-memory store is bounded and per-instance. Add `capstead-jdbc` to persist 
 <dependency>
     <groupId>io.capstead</groupId>
     <artifactId>capstead-jdbc</artifactId>
-    <version>0.3.0</version>
+    <version>0.3.1</version>
 </dependency>
 ```
 
@@ -194,7 +194,7 @@ Capstead can publish your governed capabilities as [Model Context Protocol](http
 <dependency>
     <groupId>io.capstead</groupId>
     <artifactId>capstead-mcp</artifactId>
-    <version>0.3.0</version>
+    <version>0.3.1</version>
 </dependency>
 ```
 
@@ -216,7 +216,7 @@ To expose the tools over a real MCP transport (STDIO, SSE, Streamable-HTTP), add
 <dependency>
     <groupId>io.capstead</groupId>
     <artifactId>capstead-mcp-server</artifactId>
-    <version>0.3.0</version>
+    <version>0.3.1</version>
 </dependency>
 <dependency>
     <groupId>org.springframework.ai</groupId>
@@ -279,7 +279,7 @@ No annotations, no code edits — each method becomes a governed, scored, budget
 
 ## Status
 
-`0.3.0`. The open-source core is complete and tested: registry, metadata, versioning, discovery, first-class executions with **per-model invocations and parent-child execution trees**, cost estimation, daily budgets, actuator endpoints (catalog, scorecard, metrics, **execution history**), a dashboard, the Spring AI bridge, MCP export (tool model, actuator, and Spring AI MCP server bridge), and an optional **JDBC recorder** for durable, cross-instance history with retention.
+`0.3.1`. The open-source core is complete and tested: registry, metadata, versioning, discovery, first-class executions with **per-model invocations and parent-child execution trees**, cost estimation, daily budgets, actuator endpoints (catalog, scorecard, metrics, **execution history**), a dashboard, the Spring AI bridge, MCP export (tool model, actuator, and Spring AI MCP server bridge), and an optional **JDBC recorder** for durable, cross-instance history with retention.
 
 ## License
 
