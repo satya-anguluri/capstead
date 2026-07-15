@@ -286,6 +286,67 @@ No annotations, no code edits — each method becomes a governed, scored, budget
 
 ---
 
+## Architecture
+
+Capstead wraps every capability with a Spring AOP advisor that turns each call into a first-class,
+governed `CapabilityExecution` — then fans it out to recorders and exposes it over actuator, a
+dashboard, and MCP. Capstead never executes the model itself; the model call (yours or the one Capstead
+generates for a declarative capability) enriches the in-flight execution with model, tokens and cost.
+
+```mermaid
+flowchart TB
+    subgraph App["Your Spring Boot application"]
+        direction LR
+        Cap["@Capability method<br/>(you call the model)"]
+        Client["@CapabilityClient interface<br/>(Capstead calls the model)"]
+    end
+
+    subgraph Capstead["Capstead — auto-configured"]
+        Advisor["Capability AOP advisor<br/>(interceptor)"]
+        Ctx["Execution context<br/>(thread-local enrichment)"]
+        Registry["Capability registry<br/>(catalog)"]
+        Publisher["Execution publisher"]
+    end
+
+    Model["Model call<br/>Spring AI ChatClient · CapabilityModelInvoker · your own client"]
+
+    subgraph Recorders["Recorders"]
+        InMem["In-memory store"]
+        Micrometer["Micrometer metrics"]
+        Jdbc["JDBC — durable,<br/>cross-instance"]
+    end
+
+    subgraph Surfaces["Governance surfaces"]
+        Actuator["/actuator/capabilities<br/>/capabilityscorecard<br/>/capabilityexecutions"]
+        Dashboard["/capstead dashboard"]
+        Mcp["MCP tools"]
+    end
+
+    Cap -->|invoke| Advisor
+    Client -->|proxy| Advisor
+    Advisor -->|wraps / calls| Model
+    Model -.->|model · tokens · cost| Ctx
+    Advisor --> Ctx
+    Advisor -->|publish execution| Publisher
+    Publisher --> InMem & Micrometer & Jdbc
+    Registry --> Actuator
+    InMem --> Actuator
+    Jdbc --> Actuator
+    Actuator --> Dashboard
+    Registry --> Mcp
+```
+
+- **Declare** a capability three ways — `@Capability` on a method, config (YAML), or a bodyless
+  `@CapabilityClient` interface. All flow through the same advisor.
+- **Govern** — the advisor enforces `@DailyBudget`, times the call, and opens a `CapabilityExecution`.
+- **Enrich** — whoever calls the model (Spring AI's observation bridge, a `CapabilityModelInvoker`, or
+  your client) records model, tokens and cost onto the in-flight execution; nested calls form a tree.
+- **Record** — executions fan out to the in-memory store, Micrometer, and (optionally) durable JDBC.
+- **Expose** — the registry and recorders back the actuator endpoints, the `/capstead` dashboard, and
+  MCP tool export.
+
+---
+
 ## Modules
 
 | Module | Purpose |
