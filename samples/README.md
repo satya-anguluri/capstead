@@ -30,6 +30,7 @@ Trigger more executions on demand:
 GET http://localhost:8080/demo/course?subject=Kafka
 GET http://localhost:8080/demo/tutor?question=Explain%20backpressure
 GET http://localhost:8080/demo/report
+GET http://localhost:8080/demo/budget?product=Capstead   # watch a @DailyBudget get enforced
 ```
 
 ## What it demonstrates
@@ -40,6 +41,24 @@ GET http://localhost:8080/demo/report
 | **Lesson Tutor** | `@Capability` annotation | different model (`nova-pro`) |
 | **Build Course** | `@Capability` annotation | **composed** — calls *Generate Lesson* twice → a parent-child execution **tree** |
 | **Summarize Report** | **YAML config** (`capstead.capabilities`) | no annotation on the bean at all |
+| **Generate Quiz** | **declarative** (`@CapabilityClient`) | no method body — provider-neutral `CapabilityModelInvoker` |
+| **Draft Tagline** | `@Capability` annotation | tiny `@DailyBudget("$0.02")` — **budget enforcement** demo |
+
+### Budget enforcement (governance in action)
+
+`GET /demo/budget` calls the budgeted **Draft Tagline** capability in a loop and returns the exact
+call at which Capstead blocked it once the day's spend hit the `@DailyBudget`. The method itself has
+**no budget code** — the runtime enforces it. Example output:
+
+```
+call 1: ok
+call 2: ok
+call 3: ok
+call 4: BLOCKED — budget=0.02, spent today=0.0243
+
+Capstead enforced the daily budget after 3 successful call(s).
+```
+
 
 It also shows **per-model cost** (priced from `capstead.cost`), **per-model invocations** on each
 execution, and the **execution recorder** settings (`capstead.executions.*`). Grab an execution id

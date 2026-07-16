@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <title>Capstead — Capability governance for Spring Boot</title>
+    <meta name="description" content="Capstead is the governance layer around your AI capabilities in Spring Boot: a registry, versioning, ownership, per-capability cost and budgets, and durable execution history — from one annotation."/>
+    <link rel="stylesheet" href="styles.css"/>
+</head>
+<body>
+<nav class="nav">
+    <div class="nav-inner">
+        <a class="brand" href="/">Capstead<span class="dot">.</span></a>
+        <span class="spacer"></span>
+        <a class="link" href="/research/">Research</a>
+        <a class="link" href="https://github.com/satya-anguluri/capstead">GitHub</a>
+        <a class="link" href="https://central.sonatype.com/artifact/io.capstead/capstead-starter">Maven Central</a>
+    </div>
+</nav>
+
+<header class="hero wrap">
+    <div class="eyebrow">Spring Boot · Java 17 · Apache-2.0</div>
+    <h1>Governance for your AI capabilities.<br/>From one annotation.</h1>
+    <p class="lede">
+        Capstead is <strong>not</strong> another AI framework. It's the governance layer that sits
+        <em>around</em> whatever you use to call the model — Spring AI, LangChain4j, a raw SDK — and turns
+        your Spring Boot methods into <strong>governed, versioned, observable business capabilities</strong>
+        with a catalog, per-capability cost, budgets, and durable execution history.
+    </p>
+    <div class="cta">
+        <a class="btn primary" href="/research/">Read the research</a>
+        <a class="btn ghost" href="https://github.com/satya-anguluri/capstead">Star on GitHub</a>
+    </div>
+    <p class="muted" style="margin-top:22px;font-size:14px">
+        <span class="pill">Runs in production</span>&nbsp; Dogfooded at
+        <a href="https://engineerprep.io">engineerprep.io</a>, governing ~12 capabilities across Claude &amp; Amazon Nova.
+    </p>
+</header>
+
+<section class="section wrap">
+    <div class="eyebrow">The gap</div>
+    <h2>Frameworks solve execution. Nobody governs the capability.</h2>
+    <p class="lede" style="margin-bottom:26px">
+        Spring AI and LangChain4j make <em>calling</em> a model easy. But once AI features spread across
+        services and teams, one question shows up in every architecture review — and nothing answers it:
+    </p>
+    <div class="callout">
+        <p style="font-size:18px"><strong>What capabilities do we have, who owns them, which version is live, and what do they cost?</strong></p>
+    </div>
+    <p class="muted" style="margin-top:18px">
+        Spring AI tells you about a single model invocation. Capstead tells you about the
+        <strong style="color:var(--text)">business capability</strong>: how often it ran, which model it used,
+        how many tokens it consumed, how much it cost, whether it succeeded, and which version executed.
+    </p>
+</section>
+
+<section class="section wrap">
+    <div class="eyebrow">What you get</div>
+    <h2>A governance layer, not an SDK to send your data to.</h2>
+    <div class="grid" style="margin-top:22px">
+        <div class="card">
+            <div class="k">Registry</div>
+            <h3>Capability catalog</h3>
+            <p>Every capability with its domain, owner, version, and tags — discoverable at <code>/actuator/capabilities</code>.</p>
+        </div>
+        <div class="card">
+            <div class="k">Cost</div>
+            <h3>Per-capability spend</h3>
+            <p>Attributes Spring AI's token/model data to the business capability. Real cost per capability, per model.</p>
+        </div>
+        <div class="card">
+            <div class="k">Governance</div>
+            <h3>Daily budgets</h3>
+            <p><code>@DailyBudget("$25")</code> blocks further calls once the day's spend is hit. A kill-switch with teeth.</p>
+        </div>
+        <div class="card">
+            <div class="k">Observability</div>
+            <h3>Durable execution history</h3>
+            <p>Structured executions with per-model invocations and parent-child trees, persisted to your DB — surviving restarts, aggregating across instances.</p>
+        </div>
+        <div class="card">
+            <div class="k">Versioning</div>
+            <h3>Live capability versions</h3>
+            <p>Know exactly which version of a capability executed — the metadata frameworks deliberately leave out.</p>
+        </div>
+        <div class="card">
+            <div class="k">Interop</div>
+            <h3>Governed MCP tools</h3>
+            <p>Export capabilities as Model Context Protocol tools that stay versioned, owned, and budget-enforced.</p>
+        </div>
+    </div>
+</section>
+
+<section class="section wrap">
+    <div class="eyebrow">One annotation</div>
+    <h2>Keep writing normal Spring Boot.</h2>
+    <p class="lede" style="margin-bottom:20px">Annotate any bean method. Auto-configuration wires the rest — no code in your method measures anything.</p>
+<pre><code>@Service
+class LessonService {
+
+    @Capability(name = "Generate Lesson", domain = "Learning",
+                owner = "Content Team", version = "2")
+    @DailyBudget("$25")
+    public Lesson generateLesson(String topic) {
+        // your normal logic — Spring AI, LangChain4j, a raw HTTP call, anything
+        return chatClient.prompt().user(topic).call().entity(Lesson.class);
+    }
+}</code></pre>
+    <p class="muted" style="margin-top:16px">
+        Prefer not to annotate? Declare capabilities in <strong>YAML</strong>, or write <strong>no body at all</strong>
+        with a declarative <code>@CapabilityClient</code> interface. All three styles coexist —
+        <a href="/research/#examples">see the examples</a>.
+    </p>
+</section>
+
+<section class="section wrap">
+    <div class="eyebrow">Install</div>
+    <h2>Add the starter. That's it.</h2>
+<pre><code>&lt;dependency&gt;
+    &lt;groupId&gt;io.capstead&lt;/groupId&gt;
+    &lt;artifactId&gt;capstead-starter&lt;/artifactId&gt;
+    &lt;version&gt;0.5.3&lt;/version&gt;
+&lt;/dependency&gt;</code></pre>
+    <p class="muted" style="margin-top:14px">
+        Then open the dashboard at <code>/capstead</code> and hit <code>/actuator/capabilityscorecard</code>.
+        Full walkthrough in the <a href="/research/">research write-up</a>.
+    </p>
+</section>
+
+<footer>
+    <div class="wrap">
+        <span>© 2026 Capstead · Apache-2.0</span>
+        <span class="spacer"></span>
+        <a href="/research/">Research</a>
+        <a href="https://github.com/satya-anguluri/capstead">GitHub</a>
+        <a href="https://central.sonatype.com/artifact/io.capstead/capstead-starter">Maven Central</a>
+    </div>
+</footer>
+</body>
+</html>

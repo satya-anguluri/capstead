@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <title>Research — Capability governance for Spring Boot | Capstead</title>
+    <meta name="description" content="The governance gap around AI capabilities in Spring Boot — why capability registry, versioning, ownership, cost and budgets are absent from Spring AI, LangChain4j, Semantic Kernel and MCP, and how Capstead fills it."/>
+    <link rel="stylesheet" href="../styles.css"/>
+</head>
+<body>
+<nav class="nav">
+    <div class="nav-inner">
+        <a class="brand" href="/">Capstead<span class="dot">.</span></a>
+        <span class="spacer"></span>
+        <a class="link" href="/research/">Research</a>
+        <a class="link" href="https://github.com/satya-anguluri/capstead">GitHub</a>
+        <a class="link" href="https://central.sonatype.com/artifact/io.capstead/capstead-starter">Maven Central</a>
+    </div>
+</nav>
+
+<header class="hero wrap">
+    <div class="eyebrow">Research · Capability Governance</div>
+    <h1>Governing AI capabilities in Spring Boot</h1>
+    <p class="lede">
+        The industry has solved <em>execution</em> — provider abstraction, structured output, tool calling.
+        It has not solved the layer <em>around</em> execution: a registry of what capabilities exist, who owns
+        them, which version is live, and what each one costs. This is a first-party analysis of that gap and how
+        Capstead closes it, native to the Spring Boot runtime.
+    </p>
+    <p class="muted" style="margin-top:14px;font-size:14px">Last updated July 2026 · Capstead 0.5.3</p>
+</header>
+
+<section class="section wrap">
+    <div class="eyebrow">Thesis</div>
+    <h2>Execution is a solved problem. Governance is not.</h2>
+    <p>
+        Frameworks like <strong>Spring AI</strong> and <strong>LangChain4j</strong> made calling an LLM from Java
+        straightforward. Observability tooling followed: you can trace a model call, count its tokens, and price it.
+        But that unit — the <em>model invocation</em> — is the wrong unit for governance. Organizations don't own
+        model calls; they own <strong>business capabilities</strong>: "Generate Lesson", "Classify Ticket",
+        "Review Answer". A capability may call the model zero, one, or many times, may call <em>other</em>
+        capabilities, and is owned by a team, versioned, and budgeted.
+    </p>
+    <div class="callout" style="margin:22px 0">
+        <p style="font-size:18px">
+            <strong>The unanswered question:</strong> across all our services, what AI capabilities exist,
+            who owns them, which version is live, and what do they cost?
+        </p>
+    </div>
+    <p>
+        No mainstream framework answers this, because it is deliberately out of their scope — they are execution
+        libraries. The answer requires a governance layer that treats a capability as a first-class, discoverable,
+        versioned, cost-attributed entity. That is what Capstead is.
+    </p>
+</section>
+
+<section class="section wrap">
+    <div class="eyebrow">Landscape</div>
+    <h2>Where governance sits vs. adjacent tools</h2>
+    <p class="lede" style="margin-bottom:22px">
+        Verified from primary documentation, July 2026. The point is not that these tools are lacking — it's that
+        they operate at a <em>different layer</em>. Capstead reuses them and governs on top.
+    </p>
+    <div class="tbl-scroll">
+        <table>
+            <thead>
+                <tr>
+                    <th>Concern</th>
+                    <th class="c">Spring AI</th>
+                    <th class="c">LangChain4j</th>
+                    <th class="c">Semantic Kernel</th>
+                    <th class="c">MCP</th>
+                    <th class="c">Capstead</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>Provider abstraction · structured output · tool calling</td>
+                    <td class="c yes">✓</td><td class="c yes">✓</td><td class="c yes">✓</td><td class="c no">—</td>
+                    <td class="c muted">reuses</td>
+                </tr>
+                <tr>
+                    <td>Capability registry + metadata</td>
+                    <td class="c no">✗</td><td class="c no">✗</td><td class="c part">partial</td><td class="c part">partial</td>
+                    <td class="c yes">✓</td>
+                </tr>
+                <tr>
+                    <td>Capability <strong>versioning</strong></td>
+                    <td class="c no">✗</td><td class="c no">✗</td><td class="c no">✗</td><td class="c no">✗</td>
+                    <td class="c yes">✓</td>
+                </tr>
+                <tr>
+                    <td>Runtime discovery endpoint (<code>/actuator/capabilities</code>)</td>
+                    <td class="c no">✗</td><td class="c no">✗</td><td class="c no">✗</td><td class="c no">✗</td>
+                    <td class="c yes">✓</td>
+                </tr>
+                <tr>
+                    <td>Cost attributed to a <strong>capability</strong> (not a model call)</td>
+                    <td class="c no">per-call</td><td class="c no">✗</td><td class="c no">✗</td><td class="c no">✗</td>
+                    <td class="c yes">✓</td>
+                </tr>
+                <tr>
+                    <td>Ownership · policy · <strong>daily budgets</strong></td>
+                    <td class="c no">✗</td><td class="c no">✗</td><td class="c no">✗</td><td class="c no">✗</td>
+                    <td class="c yes">✓</td>
+                </tr>
+                <tr>
+                    <td>Durable execution history + parent-child trees</td>
+                    <td class="c no">✗</td><td class="c no">✗</td><td class="c no">✗</td><td class="c no">✗</td>
+                    <td class="c yes">✓</td>
+                </tr>
+                <tr>
+                    <td>Enforced provider hiding</td>
+                    <td class="c no">✗</td><td class="c no">✗</td><td class="c no">✗</td><td class="c no">✗</td>
+                    <td class="c yes">✓</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+    <p class="muted" style="margin-top:14px;font-size:13.5px">
+        Notes: Spring AI observability is per-model-call (<code>gen_ai.client.operation</code>,
+        <code>gen_ai.client.token.usage</code>) — no capability registry or governance. Semantic Kernel exposes
+        in-process plugin metadata (name/description) and can export plugins as MCP tools, but carries no
+        versioning/ownership/cost/actuator — hence "partial". MCP standardizes tool <em>discovery for an LLM</em>,
+        not governance (owner/version/cost/health).
+    </p>
+</section>
+
+<section class="section wrap">
+    <div class="eyebrow">Design</div>
+    <h2>How Capstead models a capability</h2>
+    <div class="grid" style="margin-top:22px">
+        <div class="card">
+            <div class="k">Registry</div>
+            <h3>Metadata + versioning</h3>
+            <p>Each capability is keyed by <code>name@version</code> with domain, owner, and tags — discovered at startup and served over actuator.</p>
+        </div>
+        <div class="card">
+            <div class="k">Execution</div>
+            <h3>First-class records</h3>
+            <p>Every call becomes a structured <code>CapabilityExecution</code> with an id, principal, and one <code>ModelInvocation</code> per model call.</p>
+        </div>
+        <div class="card">
+            <div class="k">Trees</div>
+            <h3>Automatic composition</h3>
+            <p>When one capability calls another, the nested execution links to its parent — an execution tree with no workflow engine.</p>
+        </div>
+        <div class="card">
+            <div class="k">Cost</div>
+            <h3>Attribution, not measurement</h3>
+            <p>Capstead does not count tokens; it <em>attributes</em> the framework's existing token/model data to the capability and prices it per model.</p>
+        </div>
+        <div class="card">
+            <div class="k">Budgets</div>
+            <h3>Enforced governance</h3>
+            <p>A per-UTC-day spend ledger blocks a capability once its <code>@DailyBudget</code> is reached — governance the runtime enforces.</p>
+        </div>
+        <div class="card">
+            <div class="k">Durability</div>
+            <h3>Cross-instance history</h3>
+            <p>With <code>capstead-jdbc</code>, executions persist to Postgres/MySQL/H2, so scorecards survive restarts and aggregate across replicas.</p>
+        </div>
+    </div>
+</section>
+
+<section class="section wrap" id="examples">
+    <div class="eyebrow">Examples</div>
+    <h2>Three ways to declare a capability</h2>
+    <p class="lede" style="margin-bottom:20px">Mix and match in the same app. If a method is declared more than one way, the annotation wins. Each of these has a runnable version in <a href="https://github.com/satya-anguluri/capstead/tree/main/samples">the samples</a>.</p>
+
+    <h3>1 · Annotation — declaration lives next to the code</h3>
+<pre><code>@Capability(name = "Generate Lesson", domain = "Learning",
+            owner = "Content Team", version = "2", tags = {"lesson","java"})
+@DailyBudget("$25")
+public Lesson generateLesson(String topic) { ... }</code></pre>
+
+    <h3>2 · Config (YAML) — govern a method without touching it</h3>
+    <p class="muted">Ideal for third-party or generically-named methods (<code>generate</code>/<code>ask</code>/<code>review</code>).</p>
+<pre><code>capstead:
+  capabilities:
+    - name: "Summarize Report"
+      bean: reportService     # the Spring bean name
+      method: summarize
+      domain: Reporting
+      owner: Data Team
+      version: "1"</code></pre>
+
+    <h3>3 · Declarative — write no body at all</h3>
+    <p class="muted">Annotate an interface; Capstead synthesizes the implementation and governs it like any other capability. Provider-neutral — supply one <code>CapabilityModelInvoker</code> bean (Spring AI, LangChain4j, a raw SDK).</p>
+<pre><code>@CapabilityClient
+@ModelProfile("reasoning")
+public interface LessonCapability {
+
+    @Capability(name = "Generate Lesson", domain = "Learning")
+    @Prompt("Generate a Java lesson for {{topic}}")
+    Lesson execute(String topic);   // no body — Capstead writes it
+}</code></pre>
+</section>
+
+<section class="section wrap">
+    <div class="eyebrow">Case study</div>
+    <h2>In production at EngineerPrep</h2>
+    <p>
+        Capstead is dogfooded at <a href="https://engineerprep.io">engineerprep.io</a>, an AI-powered
+        technical-interview-prep platform on Spring Boot. It governs about a dozen capabilities across two domains
+        and attributes cost across <strong>Anthropic Claude</strong> and <strong>Amazon Nova</strong> (via Bedrock) —
+        all visible on the <code>/capstead</code> dashboard.
+    </p>
+    <ul class="clean muted" style="margin-top:12px">
+        <li>Capabilities declared three ways (annotation, YAML config, declarative) in one running service.</li>
+        <li>Durable, MySQL-backed execution store so scorecards aggregate across ECS tasks and survive restarts.</li>
+        <li>Per-model cost attribution — the same capability priced correctly whether it hit Claude or Nova.</li>
+        <li>Parent-child execution trees for composed capabilities, with no workflow engine.</li>
+    </ul>
+</section>
+
+<section class="section wrap">
+    <div class="eyebrow">Try it</div>
+    <h2>Governance in one dependency</h2>
+<pre><code>&lt;dependency&gt;
+    &lt;groupId&gt;io.capstead&lt;/groupId&gt;
+    &lt;artifactId&gt;capstead-starter&lt;/artifactId&gt;
+    &lt;version&gt;0.5.3&lt;/version&gt;
+&lt;/dependency&gt;</code></pre>
+    <div class="cta" style="margin-top:22px;display:flex;gap:12px;flex-wrap:wrap">
+        <a class="btn primary" href="https://github.com/satya-anguluri/capstead">View the source</a>
+        <a class="btn ghost" href="https://github.com/satya-anguluri/capstead/tree/main/samples">Clone-and-run sample</a>
+    </div>
+</section>
+
+<footer>
+    <div class="wrap">
+        <span>© 2026 Capstead · Apache-2.0</span>
+        <span class="spacer"></span>
+        <a href="/">Home</a>
+        <a href="https://github.com/satya-anguluri/capstead">GitHub</a>
+        <a href="https://central.sonatype.com/artifact/io.capstead/capstead-starter">Maven Central</a>
+    </div>
+</footer>
+</body>
+</html>
