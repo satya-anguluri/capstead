@@ -6,6 +6,8 @@ Capstead is **not** another AI framework. It's the governance layer that sits *a
 
 > Spring AI tells you about one model invocation. Capstead tells you about the **business capability**: how often it ran, which model it used, how many tokens it consumed, how much it cost, whether it succeeded, and which version executed.
 
+📖 **[Read the research: Governing AI capabilities in Spring Boot →](https://capstead.ai/research)**
+
 ---
 
 ## Why

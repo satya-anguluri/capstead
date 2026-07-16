@@ -26,11 +26,16 @@ Links use absolute root paths (`/`, `/research/`), so serve from the site root (
 
 Pick either; both serve the folder as-is.
 
-### Option A — GitHub Pages
-1. Push this repo to GitHub.
-2. Settings → Pages → deploy from a branch, folder `/website` (or move `website/*` to `/docs` and select `/docs`).
-3. Custom domain: add `capstead.ai`, create a `CNAME` file containing `capstead.ai`, and set the DNS
-   `CNAME`/`ALIAS` at your registrar to `<user>.github.io`.
+### Option A — GitHub Pages (current setup)
+This repo already deploys `website/` via `.github/workflows/pages.yml`, and `website/CNAME` pins
+`capstead.ai`. To finish:
+1. Repo **Settings → Pages → Source: GitHub Actions** (unlocks the workflow).
+2. DNS at your registrar:
+   - **Apex `capstead.ai`** → four `A` records: `185.199.108.153`, `185.199.109.153`,
+     `185.199.110.153`, `185.199.111.153` (or an `ALIAS`/`ANAME` → `satya-anguluri.github.io`).
+   - **`www.capstead.ai`** → `CNAME` → `satya-anguluri.github.io`. GitHub Pages auto-redirects the
+     non-canonical host to the apex named in `CNAME`, so `www` → `capstead.ai` works out of the box.
+3. Enable **Enforce HTTPS** once the certificate provisions (a few minutes after DNS resolves).
 
 ### Option B — S3 + CloudFront (matches the existing EngineerPrep setup)
 1. `aws s3 sync website/ s3://<bucket> --delete`
