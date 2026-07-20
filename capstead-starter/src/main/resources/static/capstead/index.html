@@ -63,9 +63,19 @@
     const CATALOG_URL = BASE + '/actuator/capabilities';
     const SCORECARD_URL = BASE + '/actuator/capabilityscorecard';
     const EXECUTIONS_URL = BASE + '/actuator/capabilityexecutions';
+    const PIPELINES_URL = BASE + '/actuator/capabilitypipelines';
 
     const fmtInt = n => (n ?? 0).toLocaleString();
     const fmtMs = n => (n ?? 0).toFixed(0) + ' ms';
+    const fmtDur = ms => {
+        ms = ms ?? 0;
+        if (ms < 1000) return ms.toFixed(0) + ' ms';
+        const s = ms / 1000;
+        if (s < 60) return s.toFixed(1) + ' s';
+        const m = Math.floor(s / 60);
+        if (m < 60) return m + 'm ' + Math.round(s % 60) + 's';
+        return Math.floor(m / 60) + 'h ' + (m % 60) + 'm';
+    };
     const fmtPct = r => ((r ?? 1) * 100).toFixed(1) + '%';
     const fmtUsd = n => '$' + Number(n ?? 0).toFixed(4);
     const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
@@ -74,7 +84,7 @@
         ? '<span class="muted">\u2014</span>'
         : models.map(m => `<span class="tag">${esc(m)}</span>`).join('');
 
-    let STATE = { scorecards: [], catalog: [], domain: null };
+    let STATE = { scorecards: [], catalog: [], pipelines: [], domain: null };
 
     function domainSummary(catalog) {
         const counts = {};
@@ -119,6 +129,35 @@
         const map = {};
         (catalog || []).forEach(m => { map[(m.name || '') + '@' + (m.version || '')] = m; });
         return map;
+    }
+
+    function renderPipelines(pipelines) {
+        const visible = STATE.domain
+            ? (pipelines || []).filter(p => ((p.domain && String(p.domain).trim()) ? p.domain : 'Ungrouped') === STATE.domain)
+            : (pipelines || []);
+        if (!visible.length) return '';
+        const dash = '<span class="muted">\u2014</span>';
+        const rows = visible.map(p => `<tr class="clickable pipeline" data-pipeline="${esc(p.name)}">
+            <td>${esc(p.name)}</td>
+            <td>${p.owner ? esc(p.owner) : dash}</td>
+            <td>${p.domain ? esc(p.domain) : dash}</td>
+            <td class="muted">${(p.steps || []).map(esc).join(' \u2192 ')}</td>
+            <td class="num">${fmtInt(p.runs)}</td>
+            <td class="num">${p.runs ? fmtPct(p.successRate) : dash}</td>
+            <td class="num">${p.runs ? fmtDur(p.avgWallTimeMs) : dash}</td>
+            <td class="num">${p.runs ? fmtUsd(p.avgCost) : dash}</td>
+            <td class="num">${p.runs ? fmtUsd(p.totalCost) : dash}</td>
+            <td>${p.runs ? health(p.successRate) : '<span class="pill idle">No runs</span>'}</td>
+        </tr>`).join('');
+        return `<h3 style="margin:0 0 10px;font-size:14px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;">Pipelines</h3>
+        <table style="margin-bottom:24px;">
+            <thead><tr>
+                <th>Pipeline</th><th>Owner</th><th>Domain</th><th>Steps</th>
+                <th class="num">Runs</th><th class="num">Success</th><th class="num">Avg Wall Time</th>
+                <th class="num">Avg Cost</th><th class="num">Total Cost</th><th>Health</th>
+            </tr></thead>
+            <tbody>${rows}</tbody>
+        </table>`;
     }
 
     function render(scorecards, catalog) {
@@ -200,7 +239,7 @@
             </tr>`;
         }).join('');
 
-        content.innerHTML = `<table>
+        content.innerHTML = renderPipelines(STATE.pipelines) + `<table>
             <thead><tr>
                 <th>Capability</th><th>Version</th><th>Owner</th><th>Domain</th><th>Models</th>
                 <th class="num">Calls</th><th class="num">Success</th><th class="num">Avg Latency</th>
@@ -209,7 +248,9 @@
             <tbody>${rows}</tbody>
         </table>`;
 
-        content.querySelectorAll('tr.clickable').forEach(tr =>
+        content.querySelectorAll('tr.clickable.pipeline').forEach(tr =>
+            tr.addEventListener('click', () => openPipelineDetail(tr.getAttribute('data-pipeline'))));
+        content.querySelectorAll('tr.clickable:not(.pipeline)').forEach(tr =>
             tr.addEventListener('click', () => openDetail(tr.getAttribute('data-name'))));
     }
 
@@ -259,8 +300,55 @@
         document.getElementById('back').addEventListener('click', load);
     }
 
+    async function openPipelineDetail(name) {
+        const content = document.getElementById('content');
+        document.getElementById('summary').innerHTML = '';
+        content.innerHTML = '<div class="empty">Loading\u2026</div>';
+        const runs = await safeJson(PIPELINES_URL + '/' + encodeURIComponent(name));
+        if (runs === null) { content.innerHTML = '<div class="empty">Could not load runs for ' + esc(name) + '.</div>'; return; }
+        const meta = (STATE.pipelines || []).find(p => p.name === name) || {};
+        const runBlocks = runs.map(r => {
+            const stepRows = (r.steps || []).map(v => `<tr>
+                <td>${esc(v.capabilityName)}</td>
+                <td>${esc(new Date(v.startedAt).toLocaleTimeString())}</td>
+                <td class="num">${fmtDur(v.durationMs)}</td>
+                <td>${v.success ? '<span class="pill ok">ok</span>' : '<span class="pill bad">' + esc(v.errorType || 'error') + '</span>'}</td>
+                <td>${modelTags(execModels(v))}</td>
+                <td class="num">${fmtInt(v.inputTokens)} / ${fmtInt(v.outputTokens)}</td>
+                <td class="num">${v.estimatedCost != null ? fmtUsd(v.estimatedCost) : '<span class="muted">\u2014</span>'}</td>
+            </tr>`).join('');
+            return `<div class="detail" style="margin-bottom:24px;">
+                <h2 style="font-size:15px;">${esc(new Date(r.startedAt).toLocaleString())}
+                    ${r.success ? '<span class="pill ok">ok</span>' : '<span class="pill bad">failed</span>'}</h2>
+                <div class="sub">wall time ${fmtDur(r.wallTimeMs)} \u00b7 ${(r.steps || []).length} step(s)
+                    \u00b7 ${fmtInt(r.inputTokens)} / ${fmtInt(r.outputTokens)} tokens
+                    ${r.totalCost != null ? '\u00b7 ' + fmtUsd(r.totalCost) : ''}</div>
+                <table>
+                    <thead><tr>
+                        <th>Step</th><th>Started</th><th class="num">Duration</th><th>Outcome</th>
+                        <th>Model(s)</th><th class="num">In / Out Tokens</th><th class="num">Cost</th>
+                    </tr></thead>
+                    <tbody>${stepRows}</tbody>
+                </table>
+            </div>`;
+        }).join('');
+        const metaBits = [];
+        if (meta.domain) metaBits.push(esc(meta.domain));
+        if (meta.owner) metaBits.push('owned by ' + esc(meta.owner));
+        metaBits.push((meta.steps || []).map(esc).join(' \u2192 '));
+        content.innerHTML = `
+            <button class="back" id="back">\u2190 All capabilities</button>
+            <div class="detail">
+                <h2>${esc(name)}</h2>
+                <div class="sub">${metaBits.filter(Boolean).join(' \u00b7 ')}</div>
+            </div>
+            ${runBlocks || '<div class="empty">No runs assembled yet \u2014 run the pipeline\u2019s first capability to see it here.</div>'}`;
+        document.getElementById('back').addEventListener('click', load);
+    }
+
     async function load() {
-        const [scorecards, catalog] = await Promise.all([safeJson(SCORECARD_URL), safeJson(CATALOG_URL)]);
+        const [scorecards, catalog, pipelines] = await Promise.all([
+            safeJson(SCORECARD_URL), safeJson(CATALOG_URL), safeJson(PIPELINES_URL)]);
         if (scorecards === null) {
             document.getElementById('content').innerHTML =
                 '<div class="empty">Could not reach <code>/actuator/capabilityscorecard</code>. '
@@ -270,6 +358,7 @@
         }
         STATE.scorecards = scorecards || [];
         STATE.catalog = catalog || [];
+        STATE.pipelines = pipelines || [];
         render(STATE.scorecards, STATE.catalog);
     }
 

@@ -66,7 +66,7 @@ import java.util.stream.Collectors;
  * {@link ConditionalOnMissingBean}, so applications can override any piece.
  */
 @AutoConfiguration
-@EnableConfigurationProperties({CapsteadCostProperties.class, CapsteadScanProperties.class, CapsteadCapabilitiesProperties.class, CapsteadExecutionsProperties.class})
+@EnableConfigurationProperties({CapsteadCostProperties.class, CapsteadScanProperties.class, CapsteadCapabilitiesProperties.class, CapsteadExecutionsProperties.class, CapsteadPipelinesProperties.class})
 @Import(CapsteadAutoConfiguration.CapabilityAutoProxyRegistrar.class)
 public class CapsteadAutoConfiguration {
 
@@ -258,6 +258,13 @@ public class CapsteadAutoConfiguration {
         @ConditionalOnMissingBean
         public CapabilityExecutionsEndpoint capabilityExecutionsEndpoint(CapabilityExecutionQuery executionQuery) {
             return new CapabilityExecutionsEndpoint(executionQuery);
+        }
+
+        @Bean
+        @ConditionalOnMissingBean
+        public CapabilityPipelinesEndpoint capabilityPipelinesEndpoint(CapabilityExecutionQuery executionQuery,
+                                                                       CapsteadPipelinesProperties pipelinesProperties) {
+            return new CapabilityPipelinesEndpoint(executionQuery, pipelinesProperties.toDefinitions());
         }
     }
 
