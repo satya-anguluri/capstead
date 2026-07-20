@@ -70,9 +70,15 @@ import java.util.stream.Collectors;
 @Import(CapsteadAutoConfiguration.CapabilityAutoProxyRegistrar.class)
 public class CapsteadAutoConfiguration {
 
+    /**
+     * Static + infrastructure role because the registry is pulled (via the explicit resolver and
+     * the AOP advisor's interceptor) during the BeanPostProcessor phase; without this it triggers
+     * the "not eligible for getting processed by all BeanPostProcessors" warning.
+     */
     @Bean
     @ConditionalOnMissingBean
-    public CapabilityRegistry capabilityRegistry() {
+    @Role(BeanDefinition.ROLE_INFRASTRUCTURE)
+    public static CapabilityRegistry capabilityRegistry() {
         return new CapabilityRegistry();
     }
 
@@ -151,15 +157,25 @@ public class CapsteadAutoConfiguration {
         return new CapabilityBudgetLedger();
     }
 
+    /**
+     * The metadata-resolver chain below (naming strategy, explicit resolver, composite) is a
+     * construction-time dependency of the AOP interceptor/advisor, so it is created during the
+     * BeanPostProcessor phase. Each bean is therefore static + {@code ROLE_INFRASTRUCTURE} —
+     * otherwise Spring logs the "not eligible for getting processed by all BeanPostProcessors"
+     * warning (e.g. for {@code capabilityNamingStrategy} being eagerly injected into
+     * {@code meterRegistryPostProcessor}'s proxying pass).
+     */
     @Bean
     @ConditionalOnMissingBean
-    public CapabilityNamingStrategy capabilityNamingStrategy() {
+    @Role(BeanDefinition.ROLE_INFRASTRUCTURE)
+    public static CapabilityNamingStrategy capabilityNamingStrategy() {
         return new DefaultCapabilityNamingStrategy();
     }
 
     @Bean
     @ConditionalOnMissingBean
-    public ExplicitCapabilityMetadataResolver explicitCapabilityMetadataResolver(ApplicationContext context,
+    @Role(BeanDefinition.ROLE_INFRASTRUCTURE)
+    public static ExplicitCapabilityMetadataResolver explicitCapabilityMetadataResolver(ApplicationContext context,
                                                                                  CapabilityRegistry registry,
                                                                                  CapsteadCapabilitiesProperties capabilitiesProperties) {
         return new ExplicitCapabilityMetadataResolver(context, registry, capabilitiesProperties.toDeclarations());
@@ -167,7 +183,8 @@ public class CapsteadAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    public CompositeCapabilityMetadataResolver capabilityMetadataResolver(ExplicitCapabilityMetadataResolver explicitResolver,
+    @Role(BeanDefinition.ROLE_INFRASTRUCTURE)
+    public static CompositeCapabilityMetadataResolver capabilityMetadataResolver(ExplicitCapabilityMetadataResolver explicitResolver,
                                                                 CapsteadScanProperties scanProperties,
                                                                 CapabilityNamingStrategy namingStrategy) {
         return new CompositeCapabilityMetadataResolver(List.of(
