@@ -13,7 +13,7 @@
 
     <groupId>io.capstead</groupId>
     <artifactId>capstead-parent</artifactId>
-    <version>0.6.0</version>
+    <version>0.7.0</version>
     <packaging>pom</packaging>
 
     <name>Capstead Parent</name>
