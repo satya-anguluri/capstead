@@ -38,6 +38,7 @@ public class ExplicitCapabilityMetadataResolver implements CapabilityMetadataRes
 
     private final Map<Method, CapabilityMetadata> metadataByMethod = new HashMap<>();
     private final Map<Method, String> budgetByMethod = new HashMap<>();
+    private final Map<Method, CapabilityUsageRule> usageByMethod = new HashMap<>();
     private final Map<Method, String> beanNameByMethod = new HashMap<>();
 
     public ExplicitCapabilityMetadataResolver(ApplicationContext context,
@@ -84,6 +85,9 @@ public class ExplicitCapabilityMetadataResolver implements CapabilityMetadataRes
         }
         if (declaration.dailyBudget() != null) {
             budgetByMethod.put(method, declaration.dailyBudget());
+        }
+        if (declaration.usage() != null) {
+            usageByMethod.put(method, declaration.usage());
         }
         beanNameByMethod.put(method, declaration.beanName());
     }
@@ -135,6 +139,11 @@ public class ExplicitCapabilityMetadataResolver implements CapabilityMetadataRes
     @Override
     public String dailyBudget(Method method) {
         return budgetByMethod.get(method);
+    }
+
+    @Override
+    public CapabilityUsageRule usageRule(Method method) {
+        return usageByMethod.get(method);
     }
 
     /** The set of declared methods, used to build the interception pointcut. */

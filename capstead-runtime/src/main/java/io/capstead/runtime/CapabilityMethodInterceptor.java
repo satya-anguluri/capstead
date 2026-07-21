@@ -96,6 +96,7 @@ public class CapabilityMethodInterceptor implements MethodInterceptor {
         try {
             Object result = invocation.proceed();
             captureOutput(builder, result);
+            recordDeclaredUsage(invocation, builder);
             return result;
         } catch (Throwable t) {
             success = false;
@@ -153,6 +154,28 @@ public class CapabilityMethodInterceptor implements MethodInterceptor {
     private String truncate(String value) {
         int max = options.captureMaxLength();
         return value.length() <= max ? value : value.substring(0, max) + "…";
+    }
+
+    /**
+     * Config-declared usage metering: when a {@link CapabilityUsageRule} is declared and the call
+     * recorded nothing itself, synthesize one model invocation from the declared argument (e.g. TTS
+     * text length as characters). Runs before {@link #priceModelInvocations}, so the synthesized
+     * invocation is priced from {@code capstead.cost} like any other. Real enrichment always wins —
+     * a rule never overrides what the call recorded.
+     */
+    private void recordDeclaredUsage(MethodInvocation invocation, CapabilityExecution.Builder builder) {
+        CapabilityUsageRule rule = metadataResolver.usageRule(invocation.getMethod());
+        if (rule == null) {
+            return;
+        }
+        if (!builder.modelInvocations().isEmpty() || builder.model() != null) {
+            return; // the call enriched its own usage — declared metering is only a fallback
+        }
+        int units = rule.measure(invocation.getArguments());
+        if (units < 0) {
+            return;
+        }
+        builder.addModelInvocation(new ModelInvocation(rule.model(), units, 0, null, Instant.now()));
     }
 
     /** Prices any model invocation (or the synthesized back-compat one) that lacks an estimated cost. */

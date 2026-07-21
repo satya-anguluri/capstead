@@ -21,4 +21,13 @@ public interface CapabilityMetadataResolver {
     default String dailyBudget(Method method) {
         return null;
     }
+
+    /**
+     * The configuration-declared usage metering rule for the method, or {@code null} if none. Used
+     * by the interceptor to synthesize a model invocation (chars/seconds/requests → priced units)
+     * when the capability's own code records nothing.
+     */
+    default CapabilityUsageRule usageRule(Method method) {
+        return null;
+    }
 }

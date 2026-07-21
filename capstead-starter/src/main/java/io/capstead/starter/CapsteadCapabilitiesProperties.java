@@ -1,6 +1,7 @@
 package io.capstead.starter;
 
 import io.capstead.runtime.CapabilityDeclaration;
+import io.capstead.runtime.CapabilityUsageRule;
 
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
@@ -23,6 +24,13 @@ import java.util.List;
  *       bean: lessonTutorService
  *       method: ask
  *       parameter-types: [java.lang.String, com.acme.AskRequest]   # only for overloads
+ *     - name: "Synthesize Speech"
+ *       bean: elevenLabsSpeechSynthesizer
+ *       method: synthesizeMp3
+ *       usage:                                    # config-declared metering — no client-code change
+ *         model: elevenlabs/eleven_multilingual_v2
+ *         unit: characters                        # tokens | characters | seconds | requests
+ *         input-from-arg: 0                       # measure the first argument
  * </pre>
  */
 @ConfigurationProperties("capstead")
@@ -42,8 +50,11 @@ public class CapsteadCapabilitiesProperties {
     public List<CapabilityDeclaration> toDeclarations() {
         List<CapabilityDeclaration> out = new ArrayList<>(capabilities.size());
         for (Declaration d : capabilities) {
+            CapabilityUsageRule usage = d.usage == null ? null
+                    : new CapabilityUsageRule(d.usage.model, d.usage.unit, d.usage.inputFromArg);
             out.add(new CapabilityDeclaration(
-                    d.bean, d.method, d.parameterTypes, d.name, d.domain, d.owner, d.version, d.tags, d.dailyBudget));
+                    d.bean, d.method, d.parameterTypes, d.name, d.domain, d.owner, d.version, d.tags,
+                    d.dailyBudget, usage));
         }
         return out;
     }
@@ -60,6 +71,7 @@ public class CapsteadCapabilitiesProperties {
         private String version = "1";
         private List<String> tags = new ArrayList<>();
         private String dailyBudget;
+        private Usage usage;
 
         public String getName() {
             return name;
@@ -131,6 +143,46 @@ public class CapsteadCapabilitiesProperties {
 
         public void setDailyBudget(String dailyBudget) {
             this.dailyBudget = dailyBudget;
+        }
+
+        public Usage getUsage() {
+            return usage;
+        }
+
+        public void setUsage(Usage usage) {
+            this.usage = usage;
+        }
+    }
+
+    /** Config-declared usage metering bound from {@code capstead.capabilities[*].usage}. */
+    public static class Usage {
+
+        private String model;
+        private CapabilityUsageRule.Unit unit = CapabilityUsageRule.Unit.CHARACTERS;
+        private int inputFromArg = 0;
+
+        public String getModel() {
+            return model;
+        }
+
+        public void setModel(String model) {
+            this.model = model;
+        }
+
+        public CapabilityUsageRule.Unit getUnit() {
+            return unit;
+        }
+
+        public void setUnit(CapabilityUsageRule.Unit unit) {
+            this.unit = unit;
+        }
+
+        public int getInputFromArg() {
+            return inputFromArg;
+        }
+
+        public void setInputFromArg(int inputFromArg) {
+            this.inputFromArg = inputFromArg;
         }
     }
 }

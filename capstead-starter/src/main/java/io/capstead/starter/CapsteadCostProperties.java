@@ -30,16 +30,24 @@ public class CapsteadCostProperties {
         this.models = models;
     }
 
-    /** Converts the bound properties into estimator rates, skipping incompletely-priced models. */
+    /**
+     * Converts the bound properties into estimator rates. A missing side defaults to zero so
+     * one-sided pricing works — usage-metered models (e.g. TTS billed per character) only have an
+     * input rate. Models with neither rate are skipped.
+     */
     public Map<String, PricingTokenCostEstimator.ModelRate> toRates() {
         Map<String, PricingTokenCostEstimator.ModelRate> rates = new LinkedHashMap<>();
         models.forEach((model, pricing) -> {
-            if (pricing.getInputPerMillionTokens() != null && pricing.getOutputPerMillionTokens() != null) {
+            if (pricing.getInputPerMillionTokens() != null || pricing.getOutputPerMillionTokens() != null) {
                 rates.put(model, new PricingTokenCostEstimator.ModelRate(
-                        pricing.getInputPerMillionTokens(), pricing.getOutputPerMillionTokens()));
+                        orZero(pricing.getInputPerMillionTokens()), orZero(pricing.getOutputPerMillionTokens())));
             }
         });
         return rates;
+    }
+
+    private static BigDecimal orZero(BigDecimal value) {
+        return value == null ? BigDecimal.ZERO : value;
     }
 
     /** Input/output price per one million tokens for a single model. */

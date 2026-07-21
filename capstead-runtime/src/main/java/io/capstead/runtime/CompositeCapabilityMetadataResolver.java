@@ -39,4 +39,15 @@ public class CompositeCapabilityMetadataResolver implements CapabilityMetadataRe
         }
         return null;
     }
+
+    @Override
+    public CapabilityUsageRule usageRule(Method method) {
+        for (CapabilityMetadataResolver delegate : delegates) {
+            CapabilityUsageRule rule = delegate.usageRule(method);
+            if (rule != null) {
+                return rule;
+            }
+        }
+        return null;
+    }
 }

@@ -22,10 +22,17 @@ public final class CapabilityDeclaration {
     private final String version;
     private final List<String> tags;
     private final String dailyBudget;
+    private final CapabilityUsageRule usage;
 
     public CapabilityDeclaration(String beanName, String methodName, List<String> parameterTypes,
                                  String name, String domain, String owner, String version,
                                  List<String> tags, String dailyBudget) {
+        this(beanName, methodName, parameterTypes, name, domain, owner, version, tags, dailyBudget, null);
+    }
+
+    public CapabilityDeclaration(String beanName, String methodName, List<String> parameterTypes,
+                                 String name, String domain, String owner, String version,
+                                 List<String> tags, String dailyBudget, CapabilityUsageRule usage) {
         this.beanName = beanName;
         this.methodName = methodName;
         this.parameterTypes = parameterTypes == null ? List.of() : List.copyOf(parameterTypes);
@@ -35,6 +42,7 @@ public final class CapabilityDeclaration {
         this.version = version == null || version.isBlank() ? "1" : version;
         this.tags = tags == null ? List.of() : List.copyOf(tags);
         this.dailyBudget = dailyBudget;
+        this.usage = usage;
     }
 
     public String beanName() {
@@ -71,5 +79,10 @@ public final class CapabilityDeclaration {
 
     public String dailyBudget() {
         return dailyBudget;
+    }
+
+    /** The declared usage metering rule, or {@code null} when the capability records its own usage. */
+    public CapabilityUsageRule usage() {
+        return usage;
     }
 }
