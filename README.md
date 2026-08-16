@@ -34,7 +34,7 @@ Modern apps expose AI capabilities across many services and teams, and nobody ca
 <dependency>
     <groupId>io.capstead</groupId>
     <artifactId>capstead-starter</artifactId>
-    <version>0.3.3</version>
+    <version>0.7.0</version>
 </dependency>
 ```
 
