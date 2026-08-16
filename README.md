@@ -158,7 +158,7 @@ Capstead does **not** measure tokens itself — it *attributes* Spring AI's exis
 <dependency>
     <groupId>io.capstead</groupId>
     <artifactId>capstead-spring-ai</artifactId>
-    <version>0.5.0</version>
+    <version>0.7.0</version>
 </dependency>
 ```
 
@@ -204,7 +204,7 @@ The in-memory store is bounded and per-instance. Add `capstead-jdbc` to persist 
 <dependency>
     <groupId>io.capstead</groupId>
     <artifactId>capstead-jdbc</artifactId>
-    <version>0.3.3</version>
+    <version>0.7.0</version>
 </dependency>
 ```
 
@@ -229,7 +229,7 @@ Capstead can publish your governed capabilities as [Model Context Protocol](http
 <dependency>
     <groupId>io.capstead</groupId>
     <artifactId>capstead-mcp</artifactId>
-    <version>0.3.3</version>
+    <version>0.7.0</version>
 </dependency>
 ```
 
@@ -251,7 +251,7 @@ To expose the tools over a real MCP transport (STDIO, SSE, Streamable-HTTP), add
 <dependency>
     <groupId>io.capstead</groupId>
     <artifactId>capstead-mcp-server</artifactId>
-    <version>0.3.3</version>
+    <version>0.7.0</version>
 </dependency>
 <dependency>
     <groupId>org.springframework.ai</groupId>
