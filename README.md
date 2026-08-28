@@ -184,7 +184,7 @@ Now every capability's scorecard shows real token counts and estimated cost — 
 
 ## Durable execution recorder
 
-Every `@Capability` call becomes a first-class `CapabilityExecution` with a unique id — the atom every scorecard, budget and dashboard is built on. In `0.3.3` the recorder became **durable and structured**:
+Every `@Capability` call becomes a first-class `CapabilityExecution` with a unique id — the atom every scorecard, budget and dashboard is built on. In `0.7.0` the recorder became **durable and structured**:
 
 - **Per-model invocations.** A capability may call the model several times (retries, multi-step, fan-out). Each call is captured as a `ModelInvocation` (model, tokens, cost, timestamp), so cost is attributed *per model* — not just per capability. Token/cost totals are summed across invocations.
 - **Execution trees.** When one `@Capability` calls another, the nested execution is linked to its parent automatically (`parentExecutionId`) — an execution tree with no workflow engine.
