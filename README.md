@@ -375,7 +375,7 @@ flowchart TB
 
 ## Status
 
-`0.5.0`. The open-source core is complete and tested: registry, metadata, versioning, discovery, first-class executions with **per-model invocations and parent-child execution trees**, cost estimation, daily budgets, actuator endpoints (catalog, scorecard, metrics, **execution history**), a dashboard, the Spring AI bridge, **provider-neutral declarative capabilities** (`@CapabilityClient` — works with any model backend via a `CapabilityModelInvoker`), MCP export (tool model, actuator, and Spring AI MCP server bridge), and an optional **JDBC recorder** for durable, cross-instance history with retention.
+`0.7.0`. The open-source core is complete and tested: registry, metadata, versioning, discovery, first-class executions with **per-model invocations and parent-child execution trees**, cost estimation, daily budgets, actuator endpoints (catalog, scorecard, metrics, **execution history**), a dashboard, the Spring AI bridge, **provider-neutral declarative capabilities** (`@CapabilityClient` — works with any model backend via a `CapabilityModelInvoker`), MCP export (tool model, actuator, and Spring AI MCP server bridge), and an optional **JDBC recorder** for durable, cross-instance history with retention.
 
 ## License
 
