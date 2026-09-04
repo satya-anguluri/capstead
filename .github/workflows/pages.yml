@@ -28,8 +28,21 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      # enablement: true creates the Pages site if the repository does not have one.
+      #
+      # Without it this step fails "Get Pages site failed ... verify that the repository has Pages enabled",
+      # which is what both runs of this workflow did on 2026-07-16 — the only two it has ever had. Pages had
+      # never been switched on, so the workflow was correct and had nothing to deploy to. Setting it here
+      # means running this workflow is sufficient: no Settings visit, and it self-heals if the site is ever
+      # removed.
+      #
+      # The custom domain still comes from website/CNAME (capstead.ai), which travels with the uploaded
+      # artifact. DNS is the one part no workflow can do: the apex needs A/AAAA records pointing at GitHub
+      # Pages, and www a CNAME to the github.io host.
       - name: Configure Pages
         uses: actions/configure-pages@v5
+        with:
+          enablement: true
 
       - name: Upload website artifact
         uses: actions/upload-pages-artifact@v3
