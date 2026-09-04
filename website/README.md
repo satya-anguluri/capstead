@@ -61,4 +61,4 @@ and a passing deploy with a dead domain is what a DNS problem looks like.
 
 - Colors/spacing live in `styles.css` (`:root` variables mirror the dashboard).
 - The comparison table and case-study numbers in `research/index.html` are first-party; keep them
-  accurate to the current release when bumping versions (currently `0.5.3`).
+  accurate to the current release when bumping versions (currently `0.8.0`).
