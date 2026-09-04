@@ -1,0 +1,68 @@
+name: Build
+
+# A published library had no build. `pages.yml` deployed the website and nothing compiled the code or ran a
+# test, so every release was gated on someone remembering to run the suite on their own machine — and the
+# MySQL round-trips auto-skip without Docker, which means a green local run could be three tests that never
+# executed.
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  # One run per branch. A push while a run is in flight supersedes it rather than queueing behind it.
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: mvn verify (JDK 17)
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # 17 because the root pom sets <java.version>17</java.version>. Pinning it here rather than taking
+      # whatever the runner ships means an image upgrade cannot quietly change what the library is built on.
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: maven
+
+      # Docker is present on ubuntu-latest, which is the point of running here: JdbcMySqlRoundTripTest is
+      # @Testcontainers(disabledWithoutDocker = true), so it SKIPS rather than fails on a machine without a
+      # daemon. Reporting what ran keeps that visible in the log instead of hidden in a pass.
+      - name: Confirm Docker is available for Testcontainers
+        run: docker version --format 'Docker {{.Server.Version}}, API {{.Server.APIVersion}}'
+
+      - name: Build and test
+        run: mvn -B -ntp verify
+
+      # Surefire's own summary is buried in a long log; this is the line worth reading, and it names any
+      # skips so a test that quietly stopped running is visible rather than counted as success.
+      - name: Test summary
+        if: always()
+        run: |
+          if ! ls */target/surefire-reports/*.txt >/dev/null 2>&1; then
+            echo "No surefire reports — the build failed before tests ran."
+            exit 0
+          fi
+          grep -h "Tests run:" */target/surefire-reports/*.txt \
+            | awk -F'[ ,]+' '{t+=$3; f+=$5; e+=$7; s+=$9}
+                             END {printf "total=%d failures=%d errors=%d skipped=%d\n", t, f, e, s}'
+          echo "--- skipped, if any ---"
+          grep -l "Skipped: [1-9]" */target/surefire-reports/*.txt || echo "none"
+
+      - name: Upload test reports
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: surefire-reports
+          path: '*/target/surefire-reports/**'
+          retention-days: 7
