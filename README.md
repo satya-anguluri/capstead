@@ -34,7 +34,7 @@ Modern apps expose AI capabilities across many services and teams, and nobody ca
 <dependency>
     <groupId>io.capstead</groupId>
     <artifactId>capstead-starter</artifactId>
-    <version>0.7.0</version>
+    <version>0.8.0</version>
 </dependency>
 ```
 
@@ -158,7 +158,7 @@ Capstead does **not** measure tokens itself — it *attributes* Spring AI's exis
 <dependency>
     <groupId>io.capstead</groupId>
     <artifactId>capstead-spring-ai</artifactId>
-    <version>0.7.0</version>
+    <version>0.8.0</version>
 </dependency>
 ```
 
@@ -204,7 +204,7 @@ The in-memory store is bounded and per-instance. Add `capstead-jdbc` to persist 
 <dependency>
     <groupId>io.capstead</groupId>
     <artifactId>capstead-jdbc</artifactId>
-    <version>0.7.0</version>
+    <version>0.8.0</version>
 </dependency>
 ```
 
@@ -229,7 +229,7 @@ Capstead can publish your governed capabilities as [Model Context Protocol](http
 <dependency>
     <groupId>io.capstead</groupId>
     <artifactId>capstead-mcp</artifactId>
-    <version>0.7.0</version>
+    <version>0.8.0</version>
 </dependency>
 ```
 
@@ -251,7 +251,7 @@ To expose the tools over a real MCP transport (STDIO, SSE, Streamable-HTTP), add
 <dependency>
     <groupId>io.capstead</groupId>
     <artifactId>capstead-mcp-server</artifactId>
-    <version>0.7.0</version>
+    <version>0.8.0</version>
 </dependency>
 <dependency>
     <groupId>org.springframework.ai</groupId>
@@ -375,7 +375,7 @@ flowchart TB
 
 ## Status
 
-`0.7.0`. The open-source core is complete and tested: registry, metadata, versioning, discovery, first-class executions with **per-model invocations and parent-child execution trees**, cost estimation, daily budgets, actuator endpoints (catalog, scorecard, metrics, **execution history**), a dashboard, the Spring AI bridge, **provider-neutral declarative capabilities** (`@CapabilityClient` — works with any model backend via a `CapabilityModelInvoker`), MCP export (tool model, actuator, and Spring AI MCP server bridge), and an optional **JDBC recorder** for durable, cross-instance history with retention.
+`0.8.0`. The open-source core is complete and tested: registry, metadata, versioning, discovery, first-class executions with **per-model invocations and parent-child execution trees**, cost estimation, daily budgets, actuator endpoints (catalog, scorecard, metrics, **execution history**), a dashboard, the Spring AI bridge, **provider-neutral declarative capabilities** (`@CapabilityClient` — works with any model backend via a `CapabilityModelInvoker`), MCP export (tool model, actuator, and Spring AI MCP server bridge), and an optional **JDBC recorder** for durable, cross-instance history with retention.
 
 ## License
 
