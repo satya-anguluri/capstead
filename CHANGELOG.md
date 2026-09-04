@@ -3,7 +3,15 @@
 Notable changes to Capstead. Versions follow `0.MINOR.PATCH` while the library is pre-1.0: a **minor** bump
 may change behaviour or a public shape, a **patch** never does.
 
+> **This file is the source for GitHub release notes.** `scripts/changelog-section.sh <version>` extracts a
+> section verbatim and `gh release create --notes-file` publishes it, so an entry has to read as notes: open
+> with one line saying what the release gives you, then the categorised detail. Anything written only on the
+> release page will be lost the next time the notes are regenerated.
+
 ## 0.8.0
+
+Walk a whole capability execution tree in one call, and get the actual tree from the actuator instead of one
+level of it.
 
 ### Breaking
 
@@ -64,3 +72,25 @@ may change behaviour or a public shape, a **patch** never does.
 rather than a new export type. An export shape that consumers persist and diff is a contract worth settling
 once, alongside the ordered execution events it will need to carry, so `findByAttribute` and a versioned
 export shape remain open.
+
+### Example
+
+```java
+// Every descendant, ordered root-first, parents before children.
+List<CapabilityExecution> tree = query.subtree(rootExecutionId);
+```
+
+```
+GET /actuator/capabilityexecutions/{id}
+{
+  "execution": { "capabilityName": "Generate Course", "executionId": "exec-1", … },
+  "children": [
+    { "execution": { "capabilityName": "Generate Lesson", … },
+      "children": [ { "execution": { "capabilityName": "Score Lesson", … }, "children": [] } ] }
+  ]
+}
+```
+
+---
+
+`io.capstead:capstead-starter:0.8.0` · [Maven Central](https://repo1.maven.org/maven2/io/capstead/capstead-starter/0.8.0/)

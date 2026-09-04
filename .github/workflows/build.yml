@@ -41,6 +41,12 @@ jobs:
       - name: Confirm Docker is available for Testcontainers
         run: docker version --format 'Docker {{.Server.Version}}, API {{.Server.APIVersion}}'
 
+      # Cheap, and it runs BEFORE the build so a version mistake fails in ten seconds rather than after the
+      # full suite. The website served 0.5.3 for three releases while the pom said 0.8.0; a README asking
+      # people to keep them in step is not a control.
+      - name: Check install snippets and the changelog match the pom
+        run: bash scripts/check-versions.sh
+
       - name: Build and test
         run: mvn -B -ntp verify
 
