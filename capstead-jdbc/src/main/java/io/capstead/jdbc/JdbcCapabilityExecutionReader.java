@@ -86,7 +86,11 @@ public class JdbcCapabilityExecutionReader implements CapabilityExecutionQuery {
      * malformed graph returns a truncated tree instead of taking out the endpoint reading it.
      *
      * <p>{@code ORDER BY depth} gives the ordering the interface promises — root first, every node after its
-     * parent — and matches what the in-memory store produces, so the two implementations agree.
+     * parent. Siblings are {@code started_at DESC} to match {@link #SELECT_CHILDREN} and the rest of this
+     * reader, with {@code execution_id} as a tie-break so executions recorded in the same millisecond — a
+     * capability fanning out to three tools does exactly that — still come back in a fixed order. This was
+     * ascending, which contradicted both the query beside it and the in-memory implementation of the same
+     * method. Raised in review.
      */
     private static final String SELECT_SUBTREE = """
             WITH RECURSIVE tree (execution_id, parent_execution_id, capability_name, version, domain, principal, started_at, finished_at, duration_ms, success, error_type, retries, captured_input, captured_output, depth) AS (
@@ -103,7 +107,7 @@ public class JdbcCapabilityExecutionReader implements CapabilityExecutionQuery {
             )
             SELECT execution_id, parent_execution_id, capability_name, version, domain, principal, started_at, finished_at, duration_ms, success, error_type, retries, captured_input, captured_output
               FROM tree
-             ORDER BY depth, started_at
+             ORDER BY depth, started_at DESC, execution_id
             """;
 
     /**
@@ -202,8 +206,21 @@ public class JdbcCapabilityExecutionReader implements CapabilityExecutionQuery {
         if (executionId == null) {
             return List.of();
         }
-        return jdbcTemplate.query(SELECT_SUBTREE, executionRowMapper(), executionId, MAX_SUBTREE_DEPTH)
-                .stream()
+        // ONE ROW PER EXECUTION, and the depth bound is why this is needed rather than tidy.
+        //
+        // The CTE stops descending at MAX_SUBTREE_DEPTH but does not remember where it has been, so a cycle
+        // yields the same execution once per lap until the bound is reached. The in-memory implementation
+        // dedupes via its visited set and the interface promises "the root and every descendant", so
+        // returning a node repeatedly would be this implementation alone disagreeing with the contract —
+        // and a consumer nesting the result would attach children to whichever copy it read last. Keeping
+        // the FIRST occurrence keeps the shallowest depth, which is the one that reflects the real path.
+        // Raised in review.
+        Map<String, CapabilityExecution.Builder> unique = new LinkedHashMap<>();
+        for (CapabilityExecution.Builder builder : jdbcTemplate.query(
+                SELECT_SUBTREE, executionRowMapper(), executionId, MAX_SUBTREE_DEPTH)) {
+            unique.putIfAbsent(builder.executionId(), builder);
+        }
+        return unique.values().stream()
                 .map(builder -> hydrate(builder, builder.executionId()))
                 .toList();
     }

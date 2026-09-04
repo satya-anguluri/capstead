@@ -59,7 +59,12 @@ class JdbcCapabilityExecutionRoundTripTest {
 
     /** One execution, recorded, so a tree can be built without repeating the builder five times. */
     private void record(String id, String parent) {
-        Instant now = Instant.now();
+        record(id, parent, Instant.now());
+    }
+
+    /** The same, with a chosen start time, for the tests that are about ordering. */
+    private void record(String id, String parent, Instant startedAt) {
+        Instant now = startedAt;
         recorder.record(CapabilityExecution.builder("cap-" + id, "1")
                 .executionId(id)
                 .parentExecutionId(parent)
@@ -97,6 +102,62 @@ class JdbcCapabilityExecutionRoundTripTest {
         assertThat(walked).first().isEqualTo("root");
         assertThat(walked.indexOf("a")).isLessThan(walked.indexOf("a1"));
         assertThat(walked.indexOf("a1")).isLessThan(walked.indexOf("a1x"));
+    }
+
+    /**
+     * The same sibling order the in-memory store produces — which is the bug this pair of tests exists for.
+     *
+     * <p>The CTE ordered siblings ascending while {@code SELECT_CHILDREN} and the in-memory store are both
+     * most-recent-first, so the two implementations of one interface method disagreed and nothing failed:
+     * the original tests asserted contents and parent-before-child, neither of which notices. Raised in
+     * review.
+     */
+    @Test
+    void subtreeOrdersSiblingsMostRecentFirst() {
+        Instant base = Instant.parse("2026-09-04T00:00:00Z");
+        record("root", null, base);
+        record("first", "root", base.plusMillis(10));
+        record("second", "root", base.plusMillis(20));
+        record("third", "root", base.plusMillis(30));
+
+        assertThat(reader.subtree("root").stream().map(CapabilityExecution::executionId).toList())
+                .containsExactly("root", "third", "second", "first");
+    }
+
+    /** Equal timestamps tie-break on id, so the order is fixed rather than whatever the plan produced. */
+    @Test
+    void subtreeBreaksTiesOnId() {
+        Instant same = Instant.parse("2026-09-04T00:00:00Z");
+        record("root", null, same);
+        record("c-charlie", "root", same);
+        record("a-alpha", "root", same);
+        record("b-bravo", "root", same);
+
+        assertThat(reader.subtree("root").stream().map(CapabilityExecution::executionId).toList())
+                .containsExactly("root", "a-alpha", "b-bravo", "c-charlie");
+    }
+
+    /**
+     * A cycle returns each execution ONCE.
+     *
+     * <p>The CTE bounds depth but does not remember where it has been, so a cycle yields the same rows once
+     * per lap until the bound is reached — fifty laps of three nodes. The in-memory store dedupes through its
+     * visited set, so without this the JDBC implementation alone would break the interface's promise of "the
+     * root and every descendant", and a consumer nesting the result would attach children to whichever copy
+     * it read last. Raised in review.
+     */
+    @Test
+    void subtreeReturnsEachNodeOnceEvenWhenParentLinksCycle() {
+        Instant base = Instant.parse("2026-09-04T00:00:00Z");
+        record("c-root", "c-leaf", base);
+        record("c-mid", "c-root", base.plusMillis(10));
+        record("c-leaf", "c-mid", base.plusMillis(20));
+
+        List<String> walked = reader.subtree("c-root").stream()
+                .map(CapabilityExecution::executionId).toList();
+
+        assertThat(walked).containsExactly("c-root", "c-mid", "c-leaf");
+        assertThat(walked).doesNotHaveDuplicates();
     }
 
     @Test

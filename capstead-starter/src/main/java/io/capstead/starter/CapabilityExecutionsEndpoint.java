@@ -66,6 +66,15 @@ public class CapabilityExecutionsEndpoint {
         Map<String, ExecutionTree> byId = new LinkedHashMap<>();
         ExecutionTree root = null;
         for (CapabilityExecution execution : ordered) {
+            // FIRST OCCURRENCE WINS.
+            //
+            // An unconditional put would replace a node that already has children attached to it, orphaning
+            // them — a corrupted shape rather than a duplicated one. The stores are not supposed to return
+            // an id twice, but this reads whatever they hand it, and being resilient to a malformed tree is
+            // cheaper here than trusting two implementations to stay correct forever. Raised in review.
+            if (byId.containsKey(execution.executionId())) {
+                continue;
+            }
             ExecutionTree node = new ExecutionTree(CapabilityExecutionView.of(execution), new ArrayList<>());
             byId.put(execution.executionId(), node);
             if (root == null) {

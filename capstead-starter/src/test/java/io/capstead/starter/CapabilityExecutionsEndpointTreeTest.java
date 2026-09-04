@@ -83,6 +83,82 @@ class CapabilityExecutionsEndpointTreeTest {
     }
 
     /**
+     * A duplicated execution id must not orphan children already attached to it.
+     *
+     * <p>{@code nest} used to put unconditionally, so a second row for the same id replaced a node that
+     * already had children — corrupting the shape rather than merely duplicating a row. The stores should
+     * not return an id twice, but this reads whatever they hand it: the JDBC CTE bounds depth without
+     * remembering where it has been, and one implementation regressing should not corrupt the response.
+     * Raised in review.
+     *
+     * <p>Driven through a stub rather than the real store, because a store that dedupes correctly cannot
+     * produce the input this is about.
+     */
+    @Test
+    void aDuplicateIdDoesNotDetachAlreadyAttachedChildren() {
+        Instant base = Instant.parse("2026-09-04T00:00:00Z");
+        CapabilityExecution root = execution("root", null, base);
+        CapabilityExecution child = execution("child", "root", base.plusMillis(10));
+        // The same root again, as a bounded cycle walk would emit it, AFTER its child was attached.
+        List<CapabilityExecution> withDuplicate = List.of(root, child, root);
+
+        CapabilityExecutionsEndpoint stubbed = new CapabilityExecutionsEndpoint(
+                new SubtreeStub(withDuplicate));
+
+        CapabilityExecutionsEndpoint.ExecutionTree tree = stubbed.execution("root");
+
+        assertThat(tree.execution().executionId()).isEqualTo("root");
+        // The child survives: the second root did not replace the node holding it.
+        assertThat(childIds(tree)).containsExactly("child");
+    }
+
+    private static CapabilityExecution execution(String id, String parent, Instant startedAt) {
+        return CapabilityExecution.builder("cap-" + id, "1")
+                .executionId(id)
+                .parentExecutionId(parent)
+                .startedAt(startedAt)
+                .finishedAt(startedAt.plusMillis(1))
+                .durationMs(1)
+                .success(true)
+                .build();
+    }
+
+    /** A query that returns exactly the malformed list under test, and nothing else. */
+    private record SubtreeStub(List<CapabilityExecution> rows)
+            implements io.capstead.runtime.CapabilityExecutionQuery {
+
+        @Override
+        public List<io.capstead.core.CapabilityScorecard> scorecards() {
+            return List.of();
+        }
+
+        @Override
+        public List<CapabilityExecution> recent() {
+            return rows;
+        }
+
+        @Override
+        public List<CapabilityExecution> recentFor(String name) {
+            return List.of();
+        }
+
+        @Override
+        public java.util.Optional<CapabilityExecution> byId(String executionId) {
+            return rows.stream().filter(r -> executionId.equals(r.executionId())).findFirst();
+        }
+
+        @Override
+        public List<CapabilityExecution> childrenOf(String executionId) {
+            return List.of();
+        }
+
+        @Override
+        public List<CapabilityExecution> subtree(String executionId) {
+            return rows;
+        }
+    }
+
+    /**
      * The endpoint must not become the place a cycle takes the process down. The store bounds the walk;
      * this asserts the nesting step does not reintroduce the problem by looping over the result.
      */

@@ -23,7 +23,12 @@ class InMemoryExecutionSubtreeTest {
 
     /** One execution, recorded. Parent is null for a root. */
     private void record(String id, String parent) {
-        Instant now = Instant.now();
+        record(id, parent, Instant.now());
+    }
+
+    /** The same, with a chosen start time, for the tests that are about ordering. */
+    private void record(String id, String parent, Instant startedAt) {
+        Instant now = startedAt;
         store.record(CapabilityExecution.builder("cap-" + id, "1")
                 .executionId(id)
                 .parentExecutionId(parent)
@@ -80,6 +85,42 @@ class InMemoryExecutionSubtreeTest {
                         .isLessThan(walked.indexOf(execution.executionId()));
             }
         }
+    }
+
+    /**
+     * Sibling order, and it is a cross-implementation contract rather than a preference.
+     *
+     * <p>{@code childrenOf} documents itself as most-recent-first and the JDBC reader orders that way, so a
+     * subtree walking siblings the other way would contradict the query beside it. The JDBC side was
+     * ascending when this was raised in review, which meant the two implementations of one method disagreed
+     * — and nothing failed, because the tests only asserted contents and parent-before-child.
+     */
+    @Test
+    void ordersSiblingsMostRecentFirst() {
+        Instant base = Instant.parse("2026-09-04T00:00:00Z");
+        record("root", null, base);
+        record("first", "root", base.plusMillis(10));
+        record("second", "root", base.plusMillis(20));
+        record("third", "root", base.plusMillis(30));
+
+        assertThat(ids(store.subtree("root"))).containsExactly("root", "third", "second", "first");
+    }
+
+    /**
+     * Equal timestamps are ordinary — a capability fanning out to three tools records three executions in
+     * the same millisecond — and without a tie-break the order is whatever the store happened to produce,
+     * which the JDBC reader cannot reproduce. Id ascending is the tie-break.
+     */
+    @Test
+    void breaksTiesOnIdSoEqualTimestampsAreStable() {
+        Instant same = Instant.parse("2026-09-04T00:00:00Z");
+        record("root", null, same);
+        record("c-charlie", "root", same);
+        record("a-alpha", "root", same);
+        record("b-bravo", "root", same);
+
+        assertThat(ids(store.subtree("root")))
+                .containsExactly("root", "a-alpha", "b-bravo", "c-charlie");
     }
 
     @Test
