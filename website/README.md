@@ -1,13 +1,13 @@
 # Capstead website
 
-The public site for [capstead.ai](https://capstead.ai). Plain static HTML/CSS — **no build step**.
+The public site for [capstead.io](https://capstead.io). Plain static HTML/CSS — **no build step**.
 
 ```
 website/
   styles.css          # shared theme (mirrors the /capstead dashboard palette)
-  index.html          # landing page              -> capstead.ai/
+  index.html          # landing page              -> capstead.io/
   research/
-    index.html        # governance research page  -> capstead.ai/research
+    index.html        # governance research page  -> capstead.io/research
 ```
 
 ## Preview locally
@@ -27,21 +27,35 @@ Links use absolute root paths (`/`, `/research/`), so serve from the site root (
 Pick either; both serve the folder as-is.
 
 ### Option A — GitHub Pages (current setup)
-This repo already deploys `website/` via `.github/workflows/pages.yml`, and `website/CNAME` pins
-`capstead.ai`. To finish:
-1. Repo **Settings → Pages → Source: GitHub Actions** (unlocks the workflow).
-2. DNS at your registrar:
-   - **Apex `capstead.ai`** → four `A` records: `185.199.108.153`, `185.199.109.153`,
-     `185.199.110.153`, `185.199.111.153` (or an `ALIAS`/`ANAME` → `satya-anguluri.github.io`).
-   - **`www.capstead.ai`** → `CNAME` → `satya-anguluri.github.io`. GitHub Pages auto-redirects the
-     non-canonical host to the apex named in `CNAME`, so `www` → `capstead.ai` works out of the box.
-3. Enable **Enforce HTTPS** once the certificate provisions (a few minutes after DNS resolves).
+This repo deploys `website/` via `.github/workflows/pages.yml`, and `website/CNAME` pins `capstead.io`.
+
+**Nothing has deployed yet.** The workflow has only ever run on 2026-07-16 and after the domain fix, and it
+fails at `Configure Pages` because the repository has no Pages site. The workflow passes `enablement: true`,
+which asks the action to create one, and GitHub refuses it: *"Create Pages site failed. Resource not
+accessible by integration."* Creating a Pages site needs admin credentials, which `GITHUB_TOKEN` is not,
+whatever `pages: write` suggests. So step 1 is genuinely manual, once.
+
+1. Repo **Settings → Pages → Source: GitHub Actions**. After this the workflow can run; `enablement: true`
+   becomes a no-op because the site already exists, and it self-heals if the site is ever deleted.
+2. **DNS at GoDaddy**, which currently serves a Website Builder placeholder on the apex — that has to be
+   detached first, or GoDaddy keeps reasserting its own records:
+   - **Apex `capstead.io`** → four `A` records pointing at GitHub Pages (or an `ALIAS`/`ANAME` →
+     `satya-anguluri.github.io`). Take the current addresses from GitHub's Pages documentation rather than
+     from here — a stale IP list in a README is worse than no list, because it looks authoritative.
+   - **`www.capstead.io`** → `CNAME` → `satya-anguluri.github.io`. Pages redirects the non-canonical host
+     to the apex named in `CNAME`, so `www` → `capstead.io` works without a second rule.
+3. Add the **domain-verification `TXT`** record offered in Settings → Pages. An unverified custom domain
+   pointed at Pages can be claimed by another account.
+4. Enable **Enforce HTTPS** once the certificate provisions — minutes to an hour after DNS resolves.
+
+A green workflow run says nothing about whether the domain serves: the deploy and the DNS are independent,
+and a passing deploy with a dead domain is what a DNS problem looks like.
 
 ### Option B — S3 + CloudFront (matches the existing EngineerPrep setup)
 1. `aws s3 sync website/ s3://<bucket> --delete`
 2. CloudFront distribution with the bucket as origin; default root object `index.html`.
 3. Add a subdirectory-index behavior (Function/Lambda@Edge) so `/research/` resolves to
-   `/research/index.html`, then point `capstead.ai` at the distribution and invalidate `/*`.
+   `/research/index.html`, then point `capstead.io` at the distribution and invalidate `/*`.
 
 ## Editing
 

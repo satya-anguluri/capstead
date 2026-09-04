@@ -36,7 +36,7 @@ jobs:
       # means running this workflow is sufficient: no Settings visit, and it self-heals if the site is ever
       # removed.
       #
-      # The custom domain still comes from website/CNAME (capstead.ai), which travels with the uploaded
+      # The custom domain still comes from website/CNAME (capstead.io), which travels with the uploaded
       # artifact. DNS is the one part no workflow can do: the apex needs A/AAAA records pointing at GitHub
       # Pages, and www a CNAME to the github.io host.
       - name: Configure Pages
