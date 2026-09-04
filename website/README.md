@@ -7,7 +7,7 @@ website/
   styles.css          # shared theme (mirrors the /capstead dashboard palette)
   index.html          # landing page              -> capstead.io/
   research/
-    index.html        # governance research page  -> capstead.io/research
+    index.html        # governance research page  -> capstead.io/research/
 ```
 
 ## Preview locally
@@ -29,14 +29,15 @@ Pick either; both serve the folder as-is.
 ### Option A — GitHub Pages (current setup)
 This repo deploys `website/` via `.github/workflows/pages.yml`, and `website/CNAME` pins `capstead.io`.
 
-**Nothing has deployed yet.** The workflow has only ever run on 2026-07-16 and after the domain fix, and it
-fails at `Configure Pages` because the repository has no Pages site. The workflow passes `enablement: true`,
-which asks the action to create one, and GitHub refuses it: *"Create Pages site failed. Resource not
+**A person has to enable Pages once; the workflow cannot do it.** The workflow passes `enablement: true`,
+which asks the action to create the site, and GitHub refuses: *"Create Pages site failed. Resource not
 accessible by integration."* Creating a Pages site needs admin credentials, which `GITHUB_TOKEN` is not,
-whatever `pages: write` suggests. So step 1 is genuinely manual, once.
+whatever `pages: write` suggests. Deploying to an existing site is a different call, and that one works —
+which is why the workflow is otherwise correct and has simply never had a site to deploy to.
 
-1. Repo **Settings → Pages → Source: GitHub Actions**. After this the workflow can run; `enablement: true`
-   becomes a no-op because the site already exists, and it self-heals if the site is ever deleted.
+1. Repo **Settings → Pages → Source: GitHub Actions**. After this the workflow runs on its own, and
+   `enablement: true` becomes a no-op because the site already exists. If the site is ever deleted, this
+   step has to be repeated by hand for the same reason.
 2. **DNS at GoDaddy**, which currently serves a Website Builder placeholder on the apex — that has to be
    detached first, or GoDaddy keeps reasserting its own records:
    - **Apex `capstead.io`** → four `A` records pointing at GitHub Pages (or an `ALIAS`/`ANAME` →
