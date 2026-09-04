@@ -1,0 +1,155 @@
+name: Publish to Maven Central
+
+# Staging a release to the Central Portal. Manual only, and guarded, because publishing a version to Central
+# cannot be undone: a version that goes out cannot be replaced, only superseded.
+#
+# WHAT THIS DOES NOT DO. The root pom sets <autoPublish>false</autoPublish>, so this uploads a deployment and
+# leaves it VALIDATED but unpublished in the Central Portal. Someone still has to open the portal and press
+# Publish. That is the safety property worth keeping — this workflow gets the artifacts built, signed and
+# validated by a machine, and leaves the irreversible half to a person.
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to publish. Must match the pom exactly (e.g. 0.8.0).'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  # Never two publishes at once. A half-uploaded deployment is a support ticket with Sonatype.
+  group: publish
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Stage ${{ inputs.version }} to Central
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # server-id must match <publishingServerId>central</publishingServerId> in the release profile, or the
+      # plugin looks up credentials under a name settings.xml does not contain and fails as "unauthorized"
+      # rather than as "misconfigured".
+      - name: Set up JDK 17 and Maven credentials
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: maven
+          server-id: central
+          server-username: MAVEN_CENTRAL_USERNAME
+          server-password: MAVEN_CENTRAL_PASSWORD
+          gpg-private-key: ${{ secrets.GPG_PRIVATE_KEY }}
+          gpg-passphrase: MAVEN_GPG_PASSPHRASE
+
+      # Fail on a missing secret HERE, with a message naming it, rather than 20 minutes later inside Maven.
+      - name: Check the required secrets are present
+        env:
+          U: ${{ secrets.MAVEN_CENTRAL_USERNAME }}
+          P: ${{ secrets.MAVEN_CENTRAL_PASSWORD }}
+          K: ${{ secrets.GPG_PRIVATE_KEY }}
+          G: ${{ secrets.GPG_PASSPHRASE }}
+        run: |
+          missing=""
+          [ -z "$U" ] && missing="$missing MAVEN_CENTRAL_USERNAME"
+          [ -z "$P" ] && missing="$missing MAVEN_CENTRAL_PASSWORD"
+          [ -z "$K" ] && missing="$missing GPG_PRIVATE_KEY"
+          [ -z "$G" ] && missing="$missing GPG_PASSPHRASE"
+          if [ -n "$missing" ]; then
+            echo "::error::Missing repository secrets:$missing"
+            echo "MAVEN_CENTRAL_* are a Central Portal user token (Account -> Generate User Token)."
+            echo "GPG_PRIVATE_KEY is an ASCII-armoured secret key: gpg --armor --export-secret-keys <KEYID>"
+            exit 1
+          fi
+          echo "All four secrets present."
+
+      # Three guards, in order of how badly each would end.
+      - name: Verify the version is publishable
+        env:
+          WANTED: ${{ inputs.version }}
+        run: |
+          POM=$(mvn -B -ntp -q help:evaluate -Dexpression=project.version -DforceStdout)
+          echo "pom version:      $POM"
+          echo "requested:        $WANTED"
+
+          # 1. Typing the version by hand is the confirmation step. A mismatch means one of the two is wrong,
+          #    and guessing which would be how the wrong version gets published.
+          if [ "$POM" != "$WANTED" ]; then
+            echo "::error::The pom is at $POM but $WANTED was requested. Bump the pom, or request $POM."
+            exit 1
+          fi
+
+          # 2. A SNAPSHOT cannot go to Central at all, and the failure from the far end is opaque.
+          case "$POM" in
+            *-SNAPSHOT)
+              echo "::error::$POM is a SNAPSHOT. Central does not accept snapshot releases."
+              exit 1;;
+          esac
+
+          # 3. The one that matters. Central versions are immutable, so re-publishing an existing version is
+          #    not a retry — it is a rejected upload at best and a confusing half-state at worst.
+          CODE=$(curl -s -o /dev/null -w '%{http_code}' --max-time 30 \
+            "https://repo1.maven.org/maven2/io/capstead/capstead-starter/$POM/")
+          echo "repo1 status for $POM: $CODE"
+          if [ "$CODE" = "200" ]; then
+            echo "::error::$POM is already on Maven Central. Versions there are immutable — bump and retry."
+            exit 1
+          fi
+          echo "$POM is not on Central. Proceeding."
+
+      # Testcontainers is @Testcontainers(disabledWithoutDocker = true), so without a daemon the MySQL
+      # round-trips SKIP rather than fail. Publishing on a green run that quietly skipped its database tests
+      # is precisely the mistake worth preventing on the one workflow that cannot be undone.
+      - name: Confirm Docker is available for Testcontainers
+        run: docker version --format 'Docker {{.Server.Version}}, API {{.Server.APIVersion}}'
+
+      # ONE command, deliberately. `verify` then `deploy` would run the whole suite twice; `deploy -DskipTests`
+      # would publish artifacts nothing tested. deploy runs the lifecycle once: test, sign, upload.
+      - name: Build, sign and stage to Central
+        env:
+          MAVEN_CENTRAL_USERNAME: ${{ secrets.MAVEN_CENTRAL_USERNAME }}
+          MAVEN_CENTRAL_PASSWORD: ${{ secrets.MAVEN_CENTRAL_PASSWORD }}
+          MAVEN_GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+        run: mvn -B -ntp -Prelease deploy
+
+      - name: Test summary
+        if: always()
+        run: |
+          if ! ls */target/surefire-reports/*.txt >/dev/null 2>&1; then
+            echo "No surefire reports — the build failed before tests ran."
+            exit 0
+          fi
+          grep -h "Tests run:" */target/surefire-reports/*.txt \
+            | awk -F'[ ,]+' '{t+=$3; f+=$5; e+=$7; s+=$9}
+                             END {printf "total=%d failures=%d errors=%d skipped=%d\n", t, f, e, s}'
+          echo "--- skipped, if any ---"
+          grep -l "Skipped: [1-9]" */target/surefire-reports/*.txt || echo "none"
+
+      - name: What to do next
+        if: success()
+        run: |
+          {
+            echo "### ${{ inputs.version }} is staged, not published"
+            echo ""
+            echo "autoPublish is false, so this deployment is sitting VALIDATED in the Central Portal and"
+            echo "nothing is public yet."
+            echo ""
+            echo "1. Open https://central.sonatype.com/publishing/deployments"
+            echo "2. Check the deployment for io.capstead ${{ inputs.version }}"
+            echo "3. Press **Publish**"
+            echo "4. Confirm https://repo1.maven.org/maven2/io/capstead/capstead-starter/${{ inputs.version }}/ returns 200"
+            echo "   (allow a few minutes for it to sync)"
+            echo "5. Tag and cut a GitHub Release for v${{ inputs.version }}, pointing at the CHANGELOG entry"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload test reports
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: surefire-reports
+          path: '*/target/surefire-reports/**'
+          retention-days: 7
