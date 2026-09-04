@@ -1,6 +1,11 @@
 # Capstead website
 
-The public site for [capstead.io](https://capstead.io). Plain static HTML/CSS — **no build step**.
+The public site for [capstead.io](https://capstead.io). Plain static HTML/CSS — **nothing to build locally**.
+
+One page is generated: `/changelog/` is rendered from the repository `CHANGELOG.md` at deploy time by
+`scripts/make-changelog-page.sh`, so the changelog is not maintained twice. It is not committed, which is
+what keeps "every file here is hand-edited HTML" true of every file anyone actually edits. Preview it
+locally by running that script before serving the folder.
 
 ```
 website/
