@@ -78,6 +78,45 @@ public class InMemoryCapabilityExecutionStore implements CapabilityExecutionReco
                 .collect(Collectors.toList());
     }
 
+    /**
+     * The given execution and every descendant beneath it, parents before children.
+     *
+     * <p>Breadth-first over one index built per call. Repeatedly filtering {@code recent} per level would be
+     * O(levels x history) and this store holds only a bounded window, so one pass to group by parent is
+     * both simpler and cheaper.
+     *
+     * <p><b>Visited ids are tracked, and that is not defensive padding.</b> Parent links come from whatever
+     * recorded them, and this store never validates that the graph is acyclic. A cycle — a record whose
+     * ancestor claims it as a parent, which an interceptor bug or a hand-written record can produce — would
+     * otherwise loop until the process died, on a read path serving an actuator endpoint. It is a query: it
+     * should return the odd shape it was given, not become the outage.
+     */
+    public synchronized List<CapabilityExecution> subtree(String executionId) {
+        if (executionId == null || byId(executionId).isEmpty()) {
+            return List.of();
+        }
+        Map<String, List<CapabilityExecution>> byParent = new LinkedHashMap<>();
+        for (CapabilityExecution execution : recent) {
+            String parent = execution.parentExecutionId();
+            if (parent != null) {
+                byParent.computeIfAbsent(parent, key -> new ArrayList<>()).add(execution);
+            }
+        }
+        List<CapabilityExecution> ordered = new ArrayList<>();
+        Set<String> seen = new LinkedHashSet<>();
+        Deque<CapabilityExecution> queue = new ArrayDeque<>();
+        queue.add(byId(executionId).orElseThrow());
+        while (!queue.isEmpty()) {
+            CapabilityExecution next = queue.removeFirst();
+            if (!seen.add(next.executionId())) {
+                continue;
+            }
+            ordered.add(next);
+            queue.addAll(byParent.getOrDefault(next.executionId(), List.of()));
+        }
+        return ordered;
+    }
+
     /** Scorecards for every capability version seen, in first-seen order. */
     public synchronized List<CapabilityScorecard> scorecards() {
         return aggregates.values().stream()

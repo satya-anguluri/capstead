@@ -4,6 +4,7 @@ import io.capstead.core.CapabilityExecution;
 import io.capstead.core.CapabilityScorecard;
 import io.capstead.core.ModelInvocation;
 
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -28,15 +29,108 @@ class JdbcCapabilityExecutionRoundTripTest {
     private JdbcCapabilityExecutionRecorder recorder;
     private JdbcCapabilityExecutionReader reader;
 
+    /**
+     * A DISTINCT database per test, and shut down afterwards.
+     *
+     * <p>Without {@code generateUniqueName}, every test in this class built a handle to the same H2 in-memory
+     * database under its default name and none of them closed it, so rows written by one test were visible to
+     * the next. It went unnoticed while each test used ids nobody else used; the subtree tests below reuse a
+     * root id deliberately, and a leaked child from another test turned up inside the tree under assertion.
+     *
+     * <p>Left as it was, the failure mode is worse than a wrong assertion: tests pass alone and fail together,
+     * or pass in one order and fail in another.
+     */
     @BeforeEach
     void setUp() {
         database = new EmbeddedDatabaseBuilder()
+                .generateUniqueName(true)
                 .setType(EmbeddedDatabaseType.H2)
                 .addScript("io/capstead/jdbc/capstead-schema.sql")
                 .build();
         JdbcTemplate jdbcTemplate = new JdbcTemplate(database);
         recorder = new JdbcCapabilityExecutionRecorder(jdbcTemplate);
         reader = new JdbcCapabilityExecutionReader(jdbcTemplate);
+    }
+
+    @AfterEach
+    void tearDown() {
+        database.shutdown();
+    }
+
+    /** One execution, recorded, so a tree can be built without repeating the builder five times. */
+    private void record(String id, String parent) {
+        Instant now = Instant.now();
+        recorder.record(CapabilityExecution.builder("cap-" + id, "1")
+                .executionId(id)
+                .parentExecutionId(parent)
+                .startedAt(now)
+                .finishedAt(now.plusMillis(1))
+                .durationMs(1)
+                .success(true)
+                .build());
+    }
+
+    /**
+     * The recursive CTE, against a real database rather than the in-memory store.
+     *
+     * <p>Three levels deep on purpose: two would pass against the direct-children query this replaces. The
+     * second tree is here because a traversal keyed on the wrong column returns the whole table and still
+     * looks right when the table holds one tree.
+     */
+    @Test
+    void subtreeReturnsEveryDescendantInOneQuery() {
+        record("root", null);
+        record("a", "root");
+        record("b", "root");
+        record("a1", "a");
+        record("a1x", "a1");
+        record("elsewhere", null);
+        record("elsewhere-child", "elsewhere");
+
+        List<String> walked = reader.subtree("root").stream()
+                .map(CapabilityExecution::executionId).toList();
+
+        assertThat(walked).containsExactlyInAnyOrder("root", "a", "b", "a1", "a1x");
+        assertThat(walked).doesNotContain("elsewhere", "elsewhere-child");
+
+        // Ordering is the contract the nested view is built from: parents before children, root first.
+        assertThat(walked).first().isEqualTo("root");
+        assertThat(walked.indexOf("a")).isLessThan(walked.indexOf("a1"));
+        assertThat(walked.indexOf("a1")).isLessThan(walked.indexOf("a1x"));
+    }
+
+    @Test
+    void subtreeOfAnUnknownIdIsEmpty() {
+        record("root", null);
+
+        assertThat(reader.subtree("no-such-execution")).isEmpty();
+        assertThat(reader.subtree(null)).isEmpty();
+    }
+
+    /**
+     * A subtree still carries each node's model invocations, which the CTE selects none of — they are
+     * hydrated per row afterwards, and a traversal that returned bare rows would quietly lose the cost data
+     * that is most of the reason to look at a tree.
+     */
+    @Test
+    void subtreeKeepsEachNodesModelInvocations() {
+        Instant now = Instant.now();
+        record("root", null);
+        recorder.record(CapabilityExecution.builder("cap-child", "1")
+                .executionId("child")
+                .parentExecutionId("root")
+                .startedAt(now)
+                .finishedAt(now.plusMillis(2))
+                .durationMs(2)
+                .success(true)
+                .addModelInvocation(new ModelInvocation("claude", 100, 25, new BigDecimal("0.01"), now))
+                .build());
+
+        CapabilityExecution child = reader.subtree("root").stream()
+                .filter(e -> "child".equals(e.executionId())).findFirst().orElseThrow();
+
+        assertThat(child.modelInvocations()).hasSize(1);
+        assertThat(child.modelInvocations().get(0).model()).isEqualTo("claude");
     }
 
     @Test
