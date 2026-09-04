@@ -46,6 +46,16 @@ jobs:
         with:
           enablement: true
 
+      # /changelog/ is rendered from the repository CHANGELOG.md rather than maintained as a second copy of
+      # it. Generated here and not committed, so no one has to remember to regenerate it and every file in
+      # website/ that a person edits stays hand-written HTML.
+      #
+      # gh needs a token; the default one is enough for the markdown endpoint.
+      - name: Render the changelog page
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: bash scripts/make-changelog-page.sh
+
       - name: Upload website artifact
         uses: actions/upload-pages-artifact@v3
         with:

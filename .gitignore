@@ -21,3 +21,7 @@ Thumbs.db
 
 # Internal knowledge base (local only — not for the public repo)
 knowledge/
+
+# Generated at deploy from CHANGELOG.md by scripts/make-changelog-page.sh — never committed, so the
+# changelog is not maintained in two places.
+website/changelog/
