@@ -28,13 +28,15 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # enablement: true creates the Pages site if the repository does not have one.
+      # enablement: true asks the action to create the Pages site when the repository has none.
       #
-      # Without it this step fails "Get Pages site failed ... verify that the repository has Pages enabled",
-      # which is what both runs of this workflow did on 2026-07-16 — the only two it has ever had. Pages had
-      # never been switched on, so the workflow was correct and had nothing to deploy to. Setting it here
-      # means running this workflow is sufficient: no Settings visit, and it self-heals if the site is ever
-      # removed.
+      # It does NOT remove the need for a person to enable Pages once. GITHUB_TOKEN is refused with
+      # "Create Pages site failed. Resource not accessible by integration" — creating a site needs admin
+      # credentials the workflow token does not have, whatever pages: write suggests. So the first
+      # enablement is manual: Settings -> Pages -> Source: GitHub Actions.
+      #
+      # It is kept because it costs nothing and turns the "no site" case into one clear error instead of a
+      # 404 from the lookup, and because the parameter is what the failure message itself points at.
       #
       # The custom domain still comes from website/CNAME (capstead.io), which travels with the uploaded
       # artifact. DNS is the one part no workflow can do: the apex needs A/AAAA records pointing at GitHub
