@@ -28,6 +28,19 @@ public class InMemoryCapabilityExecutionStore implements CapabilityExecutionReco
 
     private static final int DEFAULT_MAX_HISTORY = 200;
 
+    /**
+     * Sibling order within a subtree: most recent first, then by id so equal timestamps are still stable.
+     *
+     * <p>The id tie-break exists because executions recorded in the same millisecond are ordinary — a
+     * capability that fans out to three tools does exactly that — and without it the order is whatever the
+     * underlying store happened to produce, which the two implementations of {@code subtree} cannot agree on.
+     */
+    private static final java.util.Comparator<CapabilityExecution> SIBLING_ORDER =
+            java.util.Comparator.comparing(CapabilityExecution::startedAt,
+                            java.util.Comparator.nullsLast(java.util.Comparator.reverseOrder()))
+                    .thenComparing(CapabilityExecution::executionId,
+                            java.util.Comparator.nullsLast(java.util.Comparator.naturalOrder()));
+
     private final int maxHistory;
     private final Deque<CapabilityExecution> recent = new ArrayDeque<>();
     private final Map<String, Aggregate> aggregates = new LinkedHashMap<>();
@@ -76,6 +89,57 @@ public class InMemoryCapabilityExecutionStore implements CapabilityExecutionReco
         return recent.stream()
                 .filter(execution -> executionId.equals(execution.parentExecutionId()))
                 .collect(Collectors.toList());
+    }
+
+    /**
+     * The given execution and every descendant beneath it, parents before children.
+     *
+     * <p>Breadth-first over one index built per call. Repeatedly filtering {@code recent} per level would be
+     * O(levels x history) and this store holds only a bounded window, so one pass to group by parent is
+     * both simpler and cheaper.
+     *
+     * <p><b>Visited ids are tracked, and that is not defensive padding.</b> Parent links come from whatever
+     * recorded them, and this store never validates that the graph is acyclic. A cycle — a record whose
+     * ancestor claims it as a parent, which an interceptor bug or a hand-written record can produce — would
+     * otherwise loop until the process died, on a read path serving an actuator endpoint. It is a query: it
+     * should return the odd shape it was given, not become the outage.
+     */
+    public synchronized List<CapabilityExecution> subtree(String executionId) {
+        // Resolved once. byId streams the whole history, and calling it again for the same id inside a
+        // synchronized method is a second full scan for an answer already in hand. Raised in review.
+        Optional<CapabilityExecution> root = executionId == null ? Optional.empty() : byId(executionId);
+        if (root.isEmpty()) {
+            return List.of();
+        }
+        Map<String, List<CapabilityExecution>> byParent = new LinkedHashMap<>();
+        for (CapabilityExecution execution : recent) {
+            String parent = execution.parentExecutionId();
+            if (parent != null) {
+                byParent.computeIfAbsent(parent, key -> new ArrayList<>()).add(execution);
+            }
+        }
+        // SIBLINGS MOST-RECENT-FIRST, tie-broken on id.
+        //
+        // Not cosmetic: childrenOf documents itself as most-recent-first and the JDBC reader orders that way
+        // too, so a subtree that walked siblings the other way would contradict the query beside it and
+        // disagree with the other implementation of this same method. Iteration order of `recent` happens to
+        // give most-recent-first already, but relying on that leaves equal timestamps ordered by insertion —
+        // which the JDBC reader cannot reproduce. Sorting explicitly is what makes the two agree. Raised in
+        // review, where the JDBC side was ascending.
+        byParent.values().forEach(children -> children.sort(SIBLING_ORDER));
+        List<CapabilityExecution> ordered = new ArrayList<>();
+        Set<String> seen = new LinkedHashSet<>();
+        Deque<CapabilityExecution> queue = new ArrayDeque<>();
+        queue.add(root.orElseThrow());
+        while (!queue.isEmpty()) {
+            CapabilityExecution next = queue.removeFirst();
+            if (!seen.add(next.executionId())) {
+                continue;
+            }
+            ordered.add(next);
+            queue.addAll(byParent.getOrDefault(next.executionId(), List.of()));
+        }
+        return ordered;
     }
 
     /** Scorecards for every capability version seen, in first-seen order. */

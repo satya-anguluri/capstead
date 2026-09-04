@@ -75,6 +75,47 @@ class JdbcMySqlRoundTripTest {
         assertThat(scorecards).anyMatch(s -> s.name().equals("Generate Course") && s.invocations() == 1);
     }
 
+    /**
+     * The recursive CTE against MySQL, which is the dialect that cannot be checked without Docker.
+     *
+     * <p>The H2 round-trip covers the same query, but H2 and MySQL 8 do not agree on everything about
+     * recursive CTEs — MySQL enforces its own {@code cte_max_recursion_depth} and errors rather than
+     * truncating — so the traversal is worth proving on both. Three levels, because two would pass against
+     * the direct-children query this replaces.
+     *
+     * <p>Ids are prefixed {@code st-} because this class shares one container across tests and never
+     * truncates: reusing a plain id like "root" would import another test's rows into this tree.
+     */
+    @Test
+    void subtreeWalksTheWholeTreeInOneQuery() {
+        Instant now = Instant.now();
+        record("st-root", null, now);
+        record("st-a", "st-root", now);
+        record("st-b", "st-root", now);
+        record("st-a1", "st-a", now);
+        record("st-a1x", "st-a1", now);
+
+        List<String> walked = reader.subtree("st-root").stream()
+                .map(CapabilityExecution::executionId).toList();
+
+        assertThat(walked).containsExactlyInAnyOrder("st-root", "st-a", "st-b", "st-a1", "st-a1x");
+        assertThat(walked).first().isEqualTo("st-root");
+        assertThat(walked.indexOf("st-a")).isLessThan(walked.indexOf("st-a1"));
+        assertThat(walked.indexOf("st-a1")).isLessThan(walked.indexOf("st-a1x"));
+    }
+
+    /** One execution, recorded, so the tree above reads as a tree rather than five builders. */
+    private void record(String id, String parent, Instant now) {
+        recorder.record(CapabilityExecution.builder("cap-" + id, "1")
+                .executionId(id)
+                .parentExecutionId(parent)
+                .startedAt(now)
+                .finishedAt(now.plusMillis(1))
+                .durationMs(1)
+                .success(true)
+                .build());
+    }
+
     @Test
     void linksChildrenAndRetentionPurgeWork() {
         Instant now = Instant.now();

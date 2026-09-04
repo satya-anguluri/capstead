@@ -73,6 +73,52 @@ public class JdbcCapabilityExecutionReader implements CapabilityExecutionQuery {
             ORDER BY started_at DESC
             """;
 
+    /**
+     * The whole subtree in one round trip, breadth-first.
+     *
+     * <p>A recursive CTE, which both databases this reader is tested against support — H2 and MySQL 8. The
+     * alternative is a query per level, which is what every caller was writing by hand.
+     *
+     * <p><b>{@code depth < ?} is the cycle guard and it is load-bearing.</b> Nothing validates that parent
+     * links form a tree: they come from whatever recorded them, and a record whose ancestor claims it as a
+     * parent produces a cycle that a recursive CTE will happily walk forever. MySQL would eventually raise
+     * its own recursion limit as an error, and H2's behaviour is worse to rely on. Bounding it here means a
+     * malformed graph returns a truncated tree instead of taking out the endpoint reading it.
+     *
+     * <p>{@code ORDER BY depth} gives the ordering the interface promises — root first, every node after its
+     * parent. Siblings are {@code started_at DESC} to match {@link #SELECT_CHILDREN} and the rest of this
+     * reader, with {@code execution_id} as a tie-break so executions recorded in the same millisecond — a
+     * capability fanning out to three tools does exactly that — still come back in a fixed order. This was
+     * ascending, which contradicted both the query beside it and the in-memory implementation of the same
+     * method. Raised in review.
+     */
+    private static final String SELECT_SUBTREE = """
+            WITH RECURSIVE tree (execution_id, parent_execution_id, capability_name, version, domain, principal, started_at, finished_at, duration_ms, success, error_type, retries, captured_input, captured_output, depth) AS (
+                SELECT execution_id, parent_execution_id, capability_name, version, domain, principal, started_at, finished_at, duration_ms, success, error_type, retries, captured_input, captured_output, 0 AS depth
+                  FROM capstead_execution
+                 WHERE execution_id = ?
+                UNION ALL
+                SELECT c.execution_id, c.parent_execution_id, c.capability_name, c.version, c.domain,
+                       c.principal, c.started_at, c.finished_at, c.duration_ms, c.success, c.error_type,
+                       c.retries, c.captured_input, c.captured_output, t.depth + 1
+                  FROM capstead_execution c
+                  JOIN tree t ON c.parent_execution_id = t.execution_id
+                 WHERE t.depth < ?
+            )
+            SELECT execution_id, parent_execution_id, capability_name, version, domain, principal, started_at, finished_at, duration_ms, success, error_type, retries, captured_input, captured_output
+              FROM tree
+             ORDER BY depth, started_at DESC, execution_id
+            """;
+
+    /**
+     * How deep a subtree may go before it is treated as malformed rather than merely deep.
+     *
+     * <p>Fifty is far past any real capability nesting — the deepest thing this records is an agent calling a
+     * capability that calls another — and well short of the recursion limits the databases impose, so the
+     * truncation is ours and predictable rather than theirs and a stack trace.
+     */
+    private static final int MAX_SUBTREE_DEPTH = 50;
+
     private static final String SELECT_INVOCATIONS = """
             SELECT model, input_tokens, output_tokens, estimated_cost, invoked_at
             FROM capstead_model_invocation
@@ -151,6 +197,30 @@ public class JdbcCapabilityExecutionReader implements CapabilityExecutionQuery {
     /** Most-recent-first durable direct children of the given execution. */
     public List<CapabilityExecution> childrenOf(String parentExecutionId) {
         return jdbcTemplate.query(SELECT_CHILDREN, executionRowMapper(), parentExecutionId).stream()
+                .map(builder -> hydrate(builder, builder.executionId()))
+                .toList();
+    }
+
+    @Override
+    public List<CapabilityExecution> subtree(String executionId) {
+        if (executionId == null) {
+            return List.of();
+        }
+        // ONE ROW PER EXECUTION, and the depth bound is why this is needed rather than tidy.
+        //
+        // The CTE stops descending at MAX_SUBTREE_DEPTH but does not remember where it has been, so a cycle
+        // yields the same execution once per lap until the bound is reached. The in-memory implementation
+        // dedupes via its visited set and the interface promises "the root and every descendant", so
+        // returning a node repeatedly would be this implementation alone disagreeing with the contract —
+        // and a consumer nesting the result would attach children to whichever copy it read last. Keeping
+        // the FIRST occurrence keeps the shallowest depth, which is the one that reflects the real path.
+        // Raised in review.
+        Map<String, CapabilityExecution.Builder> unique = new LinkedHashMap<>();
+        for (CapabilityExecution.Builder builder : jdbcTemplate.query(
+                SELECT_SUBTREE, executionRowMapper(), executionId, MAX_SUBTREE_DEPTH)) {
+            unique.putIfAbsent(builder.executionId(), builder);
+        }
+        return unique.values().stream()
                 .map(builder -> hydrate(builder, builder.executionId()))
                 .toList();
     }
