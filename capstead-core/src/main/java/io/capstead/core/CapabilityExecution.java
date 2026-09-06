@@ -143,7 +143,6 @@ public final class CapabilityExecution {
         return capturedOutput;
     }
 
-    /** Every model call made during this execution, in order (possibly empty). */
     /**
      * The attributes recorded during this execution, in the order they were set. Never null; empty when
      * none were set.
@@ -157,6 +156,7 @@ public final class CapabilityExecution {
         return attributes.get(name);
     }
 
+    /** Every model call made during this execution, in order (possibly empty). */
     public List<ModelInvocation> modelInvocations() {
         return modelInvocations;
     }

@@ -151,6 +151,32 @@ class ExecutionAttributeTest {
         assertThat(finish().attribute(ALLOWED)).isEqualTo("DENY");
     }
 
+    /**
+     * The warned-name set is static and lives as long as the JVM, so it must be bounded. An application that
+     * builds an attribute name from a request id — the mistake the allow-list exists to catch — would
+     * otherwise grow it without limit, making the leak worst exactly where the code is most wrong.
+     *
+     * <p>The size is asserted directly. An earlier version of this test only checked that nothing threw and
+     * that later recording still worked, which would have passed identically with no bound at all — so it
+     * would have tested everything except the thing it was written for.
+     */
+    @Test
+    @DisplayName("two thousand distinct rejected names do not grow the warned set past its ceiling")
+    void rejectedNamesDoNotAccumulateForever() {
+        for (int i = 0; i < 2_000; i++) {
+            CapabilityExecutionContext.recordAttribute("dynamic.name" + java.util.UUID.randomUUID(), "v");
+        }
+
+        assertThat(CapabilityExecutionContext.warnedNameCount())
+                .as("distinct rejected names remembered after 2,000 of them")
+                .isLessThanOrEqualTo(CapabilityExecutionContext.warnedNameLimit());
+
+        CapabilityExecutionContext.recordAttribute(ALLOWED, "DENY");
+        assertThat(finish().attribute(ALLOWED))
+                .as("a declared name still records after a flood of undeclared ones")
+                .isEqualTo("DENY");
+    }
+
     @Test
     @DisplayName("recording never throws, whatever it is handed")
     void enrichmentNeverBreaksTheBusinessMethod() {

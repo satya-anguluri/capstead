@@ -53,6 +53,22 @@ public final class CapabilityExecutionContext {
     /** Names already warned about, so a rejected attribute inside a loop logs once rather than per call. */
     private static final Set<String> WARNED = ConcurrentHashMap.newKeySet();
 
+    /**
+     * A ceiling on that set, because it is static and lives as long as the JVM.
+     *
+     * <p>It grows by one per DISTINCT rejected name, which is bounded only if names are a fixed
+     * vocabulary. An application that builds a name from a request or run id — the mistake the allow-list
+     * is meant to catch — would grow it without limit, so the leak would be worst exactly when the code is
+     * most wrong. Raised in review.
+     *
+     * <p>At the ceiling it stops recording and stops warning, after saying so once. Clearing and starting
+     * again would restore the log spam this exists to prevent, on a loop.
+     */
+    private static final int WARNED_LIMIT = 64;
+
+    private static final java.util.concurrent.atomic.AtomicBoolean WARNED_LIMIT_REPORTED =
+            new java.util.concurrent.atomic.AtomicBoolean();
+
     private CapabilityExecutionContext() {
     }
 
@@ -153,9 +169,21 @@ public final class CapabilityExecutionContext {
     }
 
     private static void warnOnce(String name, String because) {
-        if (WARNED.add(String.valueOf(name))) {
-            log.log(Level.WARNING, "[capstead] attribute ''{0}'' was not recorded: {1}", name, because);
+        String key = String.valueOf(name);
+        if (WARNED.contains(key)) {
+            return;
         }
+        if (WARNED.size() >= WARNED_LIMIT) {
+            if (WARNED_LIMIT_REPORTED.compareAndSet(false, true)) {
+                log.log(Level.WARNING, "[capstead] more than {0} distinct attribute names have been"
+                        + " rejected; no further rejections will be logged. A name built from a request or"
+                        + " run id would do this — attribute NAMES are a fixed vocabulary, and variable data"
+                        + " belongs in the value.", WARNED_LIMIT);
+            }
+            return;
+        }
+        WARNED.add(key);
+        log.log(Level.WARNING, "[capstead] attribute ''{0}'' was not recorded: {1}", name, because);
     }
 
     /**
@@ -167,10 +195,25 @@ public final class CapabilityExecutionContext {
     public static void useRegistry(ExecutionAttributeRegistry replacement) {
         registry = replacement == null ? ExecutionAttributeRegistry.empty() : replacement;
         WARNED.clear();
+        WARNED_LIMIT_REPORTED.set(false);
     }
 
     /** The installed allow-list. Never null. */
     public static ExecutionAttributeRegistry registry() {
         return registry;
+    }
+
+    /**
+     * How many distinct rejected names are being remembered, so the ceiling can be asserted rather than
+     * described. Package-private: this is a bound on a static field, and a test that only checks nothing
+     * throws would pass just as well with no bound at all.
+     */
+    static int warnedNameCount() {
+        return WARNED.size();
+    }
+
+    /** The ceiling on that set. Package-private for the same reason. */
+    static int warnedNameLimit() {
+        return WARNED_LIMIT;
     }
 }
