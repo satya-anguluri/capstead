@@ -44,3 +44,26 @@ CREATE INDEX IF NOT EXISTS idx_capstead_execution_started_at ON capstead_executi
 CREATE INDEX IF NOT EXISTS idx_capstead_execution_parent ON capstead_execution (parent_execution_id);
 CREATE INDEX IF NOT EXISTS idx_capstead_model_invocation_execution ON capstead_model_invocation (execution_id);
 CREATE INDEX IF NOT EXISTS idx_capstead_model_invocation_model ON capstead_model_invocation (model);
+
+-- One row per attribute recorded during an execution: what the execution DECIDED, and which versioned
+-- inputs produced that decision. A policy outcome, a sanitized reason code, a source or fixture revision.
+--
+-- A table rather than columns on capstead_execution, because the set of interesting attributes differs per
+-- application and per domain; adding a column for each would make the execution row a union of everybody's
+-- needs. See io.capstead.core.ExecutionAttributes for the rules and the length limits these types match.
+--
+-- (execution_id, attr_name) is the key: an execution records at most one value per name, and re-setting
+-- a name overwrites it rather than appending. Reading by (attr_name, attr_value) — "which executions
+-- denied for this reason" — is the query this exists to serve, hence the second index.
+CREATE TABLE IF NOT EXISTS capstead_execution_attribute (
+    execution_id  VARCHAR(64)  NOT NULL REFERENCES capstead_execution (execution_id),
+    attr_name     VARCHAR(120) NOT NULL,
+    attr_value    VARCHAR(512) NOT NULL,
+    PRIMARY KEY (execution_id, attr_name)
+);
+
+CREATE INDEX IF NOT EXISTS idx_capstead_execution_attribute_lookup ON capstead_execution_attribute (attr_name, attr_value);
+
+-- The columns are attr_name / attr_value, not name / value: `value` is a reserved word in H2, which
+-- rejected the CREATE TABLE outright. Renamed on both sides rather than quoted, because a quoted identifier
+-- has to be quoted everywhere forever and one missed usage fails only on the vendor that reserves it.

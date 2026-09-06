@@ -126,6 +126,22 @@ public class JdbcCapabilityExecutionReader implements CapabilityExecutionQuery {
             ORDER BY seq
             """;
 
+    /**
+     * Attributes for one execution.
+     *
+     * <p>Ordered by name rather than by insertion: the table does not record insertion order, and a stable
+     * order is worth more to a reader comparing two executions than an order that varies by row layout.
+     * The in-memory store preserves insertion order, so the two implementations differ here — deliberately,
+     * and documented on {@code CapabilityExecution#attributes()} as "the order they were set" only for a
+     * live execution.
+     */
+    private static final String SELECT_ATTRIBUTES = """
+            SELECT attr_name, attr_value
+            FROM capstead_execution_attribute
+            WHERE execution_id = ?
+            ORDER BY attr_name
+            """;
+
     private static final String DISTINCT_MODELS = """
             SELECT e.capability_name, e.version, mi.model
             FROM capstead_execution e
@@ -235,6 +251,25 @@ public class JdbcCapabilityExecutionReader implements CapabilityExecutionQuery {
                     toInstant(rs.getTimestamp("invoked_at"))));
             return null;
         }, executionId);
+
+        // ATTRIBUTES ARE REHYDRATED HERE, which is the single place every read path funnels through — byId,
+        // recent, recentFor, childrenOf and subtree all end up in this method, so none of them can return an
+        // execution whose attributes are silently missing.
+        //
+        // Set on the builder, NOT through CapabilityExecutionContext, so the allow-list is not consulted on
+        // read. That matters: the registry is application configuration and can change, and a name removed
+        // from it must not make the executions already recorded under it unreadable. What was recorded is
+        // what happened.
+        //
+        // The builder's own structural rules do still apply — it is the same method application code calls.
+        // That is deliberate rather than overlooked, and it cannot silently drop a stored row, because the
+        // column widths in the schema are the limits in ExecutionAttributes: a value that fits the column
+        // passes the check.
+        jdbcTemplate.query(SELECT_ATTRIBUTES, (rs, rowNum) -> {
+            builder.attribute(rs.getString("attr_name"), rs.getString("attr_value"));
+            return null;
+        }, executionId);
+
         return builder.build();
     }
 

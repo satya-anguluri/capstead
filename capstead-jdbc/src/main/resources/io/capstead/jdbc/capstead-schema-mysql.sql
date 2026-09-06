@@ -48,3 +48,19 @@ CREATE TABLE IF NOT EXISTS capstead_model_invocation (
     CONSTRAINT fk_capstead_model_invocation_execution
         FOREIGN KEY (execution_id) REFERENCES capstead_execution (execution_id)
 );
+
+-- Execution attributes — MySQL variant. See the default script for what this table is for.
+--
+-- The lookup index prefixes `value` at 191 characters rather than indexing all 512. Under utf8mb4 a
+-- (120 + 512)-character key is 2,528 bytes, which fits InnoDB's 3,072-byte limit today but leaves nothing
+-- spare and would break on a narrower row format. Attribute values are reason codes and revisions, so 191
+-- characters discriminates every realistic value, and MySQL rechecks the full column anyway.
+CREATE TABLE IF NOT EXISTS capstead_execution_attribute (
+    execution_id  VARCHAR(64)  NOT NULL,
+    attr_name     VARCHAR(120) NOT NULL,
+    attr_value    VARCHAR(512) NOT NULL,
+    PRIMARY KEY (execution_id, attr_name),
+    KEY idx_capstead_execution_attribute_lookup (attr_name, attr_value(191)),
+    CONSTRAINT fk_capstead_execution_attribute_execution
+        FOREIGN KEY (execution_id) REFERENCES capstead_execution (execution_id)
+);
