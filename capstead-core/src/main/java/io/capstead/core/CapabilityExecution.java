@@ -361,6 +361,35 @@ public final class CapabilityExecution {
             return Collections.unmodifiableMap(attributes);
         }
 
+        /**
+         * Rewrite the attribute values through {@code sanitizer}, keeping names and order.
+         *
+         * <p>For redaction, applied once by the interceptor just before the execution is built. It is a
+         * rewrite rather than a re-set so that it cannot be defeated by the per-execution ceiling: a
+         * sanitizer that returns a longer value than it was given must not cause the attribute it was
+         * cleaning to be dropped.
+         *
+         * <p>A sanitizer returning null or an over-length value REMOVES the attribute. Removing it is the
+         * safe failure for redaction specifically — a value that could not be cleaned must not be stored
+         * as it was, and storing a placeholder would claim the cleaning succeeded.
+         */
+        public Builder sanitizeAttributes(java.util.function.UnaryOperator<String> sanitizer) {
+            if (sanitizer == null || attributes.isEmpty()) {
+                return this;
+            }
+            java.util.Iterator<Map.Entry<String, String>> entries = attributes.entrySet().iterator();
+            while (entries.hasNext()) {
+                Map.Entry<String, String> entry = entries.next();
+                String cleaned = sanitizer.apply(entry.getValue());
+                if (ExecutionAttributes.isValidValue(cleaned)) {
+                    entry.setValue(cleaned);
+                } else {
+                    entries.remove();
+                }
+            }
+            return this;
+        }
+
         // --- Back-compat single-invocation enrichment ---
 
         public Builder model(String model) {

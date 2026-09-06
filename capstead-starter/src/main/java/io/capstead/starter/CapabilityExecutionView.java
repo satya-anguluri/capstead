@@ -6,6 +6,7 @@ import io.capstead.core.ModelInvocation;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 
 /**
  * A serialization-friendly view of a {@link CapabilityExecution} for the actuator endpoints.
@@ -38,7 +39,19 @@ public record CapabilityExecutionView(
         String model,
         List<ModelInvocationView> modelInvocations,
         String capturedInput,
-        String capturedOutput) {
+        String capturedOutput,
+        /**
+         * What the execution DECIDED, as opposed to how it went.
+         *
+         * <p>Added last so the field order of everything before it is unchanged for anyone reading this
+         * positionally. Always present, empty when the execution recorded none — an absent key and an
+         * empty object would mean the same thing to a consumer, and one of them is a null check.
+         *
+         * <p>Safe to expose: values are allow-listed by name, length-capped, and passed through the
+         * application's redactor before the execution is built. This endpoint carries no prompt,
+         * retrieved chunk or memory value.
+         */
+        Map<String, String> attributes) {
 
     /** A serialization-friendly view of a single {@link ModelInvocation}. */
     public record ModelInvocationView(
@@ -84,7 +97,8 @@ public record CapabilityExecutionView(
                 execution.model(),
                 execution.modelInvocations().stream().map(ModelInvocationView::of).toList(),
                 execution.capturedInput(),
-                execution.capturedOutput());
+                execution.capturedOutput(),
+                execution.attributes());
     }
 
     private static String text(Instant instant) {
