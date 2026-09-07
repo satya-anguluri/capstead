@@ -41,6 +41,11 @@ public class JdbcCapabilityExecutionRecorder implements CapabilityExecutionRecor
             VALUES (?, ?, ?, ?, ?, ?, ?)
             """;
 
+    private static final String INSERT_ATTRIBUTE = """
+            INSERT INTO capstead_execution_attribute (execution_id, attr_name, attr_value)
+            VALUES (?, ?, ?)
+            """;
+
     private final JdbcTemplate jdbcTemplate;
 
     public JdbcCapabilityExecutionRecorder(JdbcTemplate jdbcTemplate) {
@@ -60,6 +65,7 @@ public class JdbcCapabilityExecutionRecorder implements CapabilityExecutionRecor
                 try {
                     insertExecution(connection, execution);
                     insertInvocations(connection, execution);
+                    insertAttributes(connection, execution);
                     connection.commit();
                 } catch (RuntimeException | java.sql.SQLException ex) {
                     connection.rollback();
@@ -96,6 +102,33 @@ public class JdbcCapabilityExecutionRecorder implements CapabilityExecutionRecor
             ps.setString(17, execution.capturedInput());
             ps.setString(18, execution.capturedOutput());
             ps.executeUpdate();
+        }
+    }
+
+    /**
+     * Persist the attributes, in the same transaction as the execution row.
+     *
+     * <p>Same transaction on purpose: an execution row without its attributes is a record that says a
+     * decision was made and cannot say what it was, which is worse than no record at all for anything
+     * auditing it. Either both land or neither does.
+     *
+     * <p>No validation here. The rules were applied when the attribute was set — this layer trusts the
+     * record it is given, exactly as it does for model invocations, and re-checking would put a second
+     * copy of the rules somewhere they could drift from the first.
+     */
+    private void insertAttributes(java.sql.Connection connection, CapabilityExecution execution) throws java.sql.SQLException {
+        java.util.Map<String, String> attributes = execution.attributes();
+        if (attributes.isEmpty()) {
+            return;
+        }
+        try (PreparedStatement ps = connection.prepareStatement(INSERT_ATTRIBUTE)) {
+            for (java.util.Map.Entry<String, String> attribute : attributes.entrySet()) {
+                ps.setString(1, execution.executionId());
+                ps.setString(2, attribute.getKey());
+                ps.setString(3, attribute.getValue());
+                ps.addBatch();
+            }
+            ps.executeBatch();
         }
     }
 

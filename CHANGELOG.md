@@ -13,6 +13,120 @@ may change behaviour or a public shape, a **patch** never does.
 > categories used above, with the code samples left on the releases. Where the two differ, the release
 > page is the original record.
 
+## 0.9.0
+
+Record what an execution **decided**, not only how it went — namespaced, allow-listed attributes that persist
+with the execution and come back on every read path.
+
+`CapabilityExecution` has always answered *how did this go*: timing, success, retries, tokens, cost. It could
+not answer *what did it decide, and on which version of its inputs*. A policy outcome, a sanitized reason
+code, the revision of the source or fixture an execution acted on had nowhere to live, and overloading
+`version` (the capability's own) or `errorType` (how it failed) would have been worse than adding nothing.
+
+### Added
+
+- **Execution attributes.** Declare the names your application may use, then record them from inside a
+  capability:
+
+  ```yaml
+  capstead:
+    attributes:
+      allowed:
+        - policy.authorization.outcome
+        - policy.authorization.reason
+        - evidence.sourceRevision
+  ```
+
+  ```java
+  CapabilityExecutionContext.recordAttribute("policy.authorization.outcome", "DENY");
+  CapabilityExecutionContext.recordAttribute("evidence.sourceRevision", "17");
+  ```
+
+  Read them back from `CapabilityExecution.attributes()` and `attribute(name)`, from
+  `GET /actuator/capabilityexecutions`, or from the durable store.
+
+- **`capstead_execution_attribute`**, written in the same transaction as the execution row. Not a separate
+  write: an execution row without its attributes is a record saying a decision was made that cannot say what
+  it was, which is worse than no record for anything auditing it. Keyed `(execution_id, attr_name)` — one
+  value per name — and indexed on `(attr_name, attr_value)`, because *"which executions denied for this
+  reason"* is the question the table exists to serve.
+
+  Attributes are rehydrated by every read path — `byId`, `recent`, `recentFor`, `childrenOf` and `subtree` —
+  rather than by `byId` alone.
+
+- **Attributes in the actuator view.** `CapabilityExecutionView` carries an `attributes` map, added as the
+  last component so field order is unchanged for anything reading it positionally. Always present, empty
+  when none were recorded: an absent key and an empty object mean the same thing to a consumer, and one of
+  them is a null check.
+
+### Changed
+
+- **Redaction now applies to attribute values, not only captured input and output.** It was applied to
+  `capturedInput` and `capturedOutput` only, which left attributes as a second, uncovered path into durable
+  storage — an application recording a reason code that happened to carry a token stored it raw, however
+  carefully it had configured a `CapabilityDataRedactor`. The captured-I/O path is safe largely because
+  capture is off by default; attributes have no such default, because recording them is the point.
+
+  A value the redactor cannot clean is **removed** rather than stored raw or replaced with a placeholder — a
+  placeholder would claim the cleaning succeeded.
+
+### Not included
+
+- **Attributes are not Micrometer dimensions, and never will be by default.** A run or trace identifier
+  promoted to a metric tag multiplies your time series by its cardinality and can take a metrics backend
+  down. `CapabilityMetrics` builds a fixed four-tag set from explicit fields and cannot see attributes; a
+  test asserts both that the tag keys are exactly those four and that no tag *value* equals an attribute
+  value, so wiring one in later fails a build rather than a Prometheus.
+
+- **Correlation-identifier lookup.** Attributes make correlation ids recordable; `findByAttribute` — finding
+  the executions carrying one — is not in this release.
+
+### Notes for anyone extending this
+
+- **Declaring nothing allows nothing.** An empty allow-list records no attributes, which is exactly how an
+  application behaved before this release. An empty list meaning "anything goes" would make the allow-list
+  something you have to remember to switch on.
+
+- **Names are namespaced and matched exactly.** At least one dot, a lower-case root segment, camelCase
+  allowed inside (`evidence.sourceRevision`). There is no `policy.*` wildcard, deliberately — it would
+  re-admit what the allow-list exists to exclude, one namespace at a time. A malformed declared name is
+  dropped rather than allowed, so a typo fails closed.
+
+- **Nothing here can fail your business method.** A refused attribute is skipped and logged once per name.
+  Recording is instrumentation; instrumentation that can fail the code it measures is a worse defect than a
+  missing attribute.
+
+- **Values are never truncated.** Over-length values are refused whole. These are evidence, and a silently
+  shortened revision reads as a real value while not being one — harder to notice than its absence. The
+  ceilings are 512 characters per value and 32 attributes per execution.
+
+- **The columns are `attr_name` / `attr_value`.** `value` is a reserved word in H2 and the `CREATE TABLE`
+  was rejected outright. Renamed rather than quoted: a quoted identifier has to stay quoted everywhere
+  forever, and one missed usage fails only on the vendor that reserves the word.
+
+### Example
+
+```java
+@Capability(name = "Answer Question", domain = "Support")
+public Answer answer(String question) {
+    Retrieval retrieval = retriever.retrieve(question);
+
+    CapabilityExecutionContext.recordAttribute("evidence.sourceRevision", retrieval.revision());
+    CapabilityExecutionContext.recordAttribute("evidence.state", retrieval.state().name());
+
+    if (!policy.permits(retrieval)) {
+        CapabilityExecutionContext.recordAttribute("policy.authorization.outcome", "DENY");
+        CapabilityExecutionContext.recordAttribute("policy.authorization.reason", "ACCESS_REVOKED");
+        return Answer.refused();
+    }
+
+    CapabilityExecutionContext.recordAttribute("policy.authorization.outcome", "ALLOW");
+    return generator.generate(question, retrieval);
+}
+```
+
+Two executions of that capability can now be told apart by what they decided, not only by what they cost.
+
 ## 0.8.0
 
 Walk a whole capability execution tree in one call, and get the actual tree from the actuator instead of one

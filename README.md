@@ -195,6 +195,26 @@ Every `@Capability` call becomes a first-class `CapabilityExecution` with a uniq
   ```
 - **Recording modes.** `capstead.executions.recording-mode: best-effort` (default — recording never fails your business call) `| sync | async`.
 - **Privacy by default.** Inputs/outputs are **not** stored unless you opt in (`capstead.executions.capture-input` / `capture-output`), and a `CapabilityDataRedactor` bean lets you strip secrets/PII. Attribute executions to a caller with a `CapabilityPrincipalProvider`.
+- **Execution attributes.** An execution records *how it went* by default. To also record *what it decided*
+  — a policy outcome, a sanitized reason code, the revision of the source or fixture it acted on — declare
+  the names you will use and set them from inside the capability:
+
+  ```yaml
+  capstead:
+    attributes:
+      allowed:
+        - policy.authorization.outcome
+        - evidence.sourceRevision
+  ```
+
+  ```java
+  CapabilityExecutionContext.recordAttribute("policy.authorization.outcome", "DENY");
+  ```
+
+  Names are **namespaced and allow-listed**: an undeclared or malformed name is not stored, and the default
+  is empty, so an application that declares nothing records nothing. Attributes are deliberately **not**
+  Micrometer tags — a per-run identifier promoted to a metric dimension would multiply your time series by
+  the number of runs — so they are queryable in the execution store and absent from your metrics backend.
 
 ### Durable persistence (survives restarts, aggregates across instances)
 

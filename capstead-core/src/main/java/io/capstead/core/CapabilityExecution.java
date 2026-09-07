@@ -4,7 +4,9 @@ import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * A first-class record of one capability execution.
@@ -37,6 +39,18 @@ public final class CapabilityExecution {
     private final String capturedOutput;
     private final List<ModelInvocation> modelInvocations;
 
+    /**
+     * What this execution DECIDED, and which versioned inputs produced that decision.
+     *
+     * <p>Insertion-ordered, so a reader sees them in the order the execution set them, which is usually
+     * the order the decisions were made. Empty for every execution that sets none, which is what keeps
+     * existing consumers behaving unchanged.
+     *
+     * <p>See {@link ExecutionAttributes} for the rules, and for why this is deliberately not a
+     * free-form map.
+     */
+    private final Map<String, String> attributes;
+
     private CapabilityExecution(Builder builder) {
         this.executionId = builder.executionId;
         this.parentExecutionId = builder.parentExecutionId;
@@ -53,6 +67,7 @@ public final class CapabilityExecution {
         this.capturedInput = builder.capturedInput;
         this.capturedOutput = builder.capturedOutput;
         this.modelInvocations = Collections.unmodifiableList(builder.resolveInvocations());
+        this.attributes = Collections.unmodifiableMap(new LinkedHashMap<>(builder.attributes));
     }
 
     /** Unique id of this execution, assigned when it begins. */
@@ -128,6 +143,19 @@ public final class CapabilityExecution {
         return capturedOutput;
     }
 
+    /**
+     * The attributes recorded during this execution, in the order they were set. Never null; empty when
+     * none were set.
+     */
+    public Map<String, String> attributes() {
+        return attributes;
+    }
+
+    /** One attribute's value, or {@code null} if this execution did not record it. */
+    public String attribute(String name) {
+        return attributes.get(name);
+    }
+
     /** Every model call made during this execution, in order (possibly empty). */
     public List<ModelInvocation> modelInvocations() {
         return modelInvocations;
@@ -200,6 +228,7 @@ public final class CapabilityExecution {
 
         // The multi-call model invocation API.
         private final List<ModelInvocation> modelInvocations = new ArrayList<>();
+        private final Map<String, String> attributes = new LinkedHashMap<>();
 
         // Back-compat single-invocation enrichment fields (synthesized into one invocation if used alone).
         private String model;
@@ -290,6 +319,75 @@ public final class CapabilityExecution {
 
         public List<ModelInvocation> modelInvocations() {
             return modelInvocations;
+        }
+
+        /**
+         * Record one attribute, if it is structurally acceptable.
+         *
+         * <p><b>Never throws, and never partially stores.</b> An unacceptable name or value is skipped and
+         * the execution continues. Instrumentation that can fail the business method it is measuring is a
+         * worse defect than a missing attribute, and this is called from inside a running capability.
+         * Callers that want to know use {@link #attributeRejected(String, String)}.
+         *
+         * <p>Values are not truncated. These are evidence — a silently shortened revision or reason code
+         * reads as a real value and is not one, which is harder to notice than its absence.
+         *
+         * <p>Re-setting a name overwrites it, and does not count again towards the ceiling.
+         */
+        public Builder attribute(String name, String value) {
+            if (attributeRejected(name, value)) {
+                return this;
+            }
+            this.attributes.put(name, value);
+            return this;
+        }
+
+        /**
+         * Why {@link #attribute(String, String)} would skip this pair, or {@code false} if it would store it.
+         *
+         * <p>Exposed so the layer that owns the allow-list can log a warning naming the reason, without
+         * duplicating these rules or having to guess after the fact.
+         */
+        public boolean attributeRejected(String name, String value) {
+            if (!ExecutionAttributes.isValidName(name) || !ExecutionAttributes.isValidValue(value)) {
+                return true;
+            }
+            return !attributes.containsKey(name)
+                    && attributes.size() >= ExecutionAttributes.MAX_PER_EXECUTION;
+        }
+
+        /** Attributes set on this builder so far, in order. */
+        public Map<String, String> attributes() {
+            return Collections.unmodifiableMap(attributes);
+        }
+
+        /**
+         * Rewrite the attribute values through {@code sanitizer}, keeping names and order.
+         *
+         * <p>For redaction, applied once by the interceptor just before the execution is built. It is a
+         * rewrite rather than a re-set so that it cannot be defeated by the per-execution ceiling: a
+         * sanitizer that returns a longer value than it was given must not cause the attribute it was
+         * cleaning to be dropped.
+         *
+         * <p>A sanitizer returning null or an over-length value REMOVES the attribute. Removing it is the
+         * safe failure for redaction specifically — a value that could not be cleaned must not be stored
+         * as it was, and storing a placeholder would claim the cleaning succeeded.
+         */
+        public Builder sanitizeAttributes(java.util.function.UnaryOperator<String> sanitizer) {
+            if (sanitizer == null || attributes.isEmpty()) {
+                return this;
+            }
+            java.util.Iterator<Map.Entry<String, String>> entries = attributes.entrySet().iterator();
+            while (entries.hasNext()) {
+                Map.Entry<String, String> entry = entries.next();
+                String cleaned = sanitizer.apply(entry.getValue());
+                if (ExecutionAttributes.isValidValue(cleaned)) {
+                    entry.setValue(cleaned);
+                } else {
+                    entries.remove();
+                }
+            }
+            return this;
         }
 
         // --- Back-compat single-invocation enrichment ---

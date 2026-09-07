@@ -105,6 +105,13 @@ public class CapabilityMethodInterceptor implements MethodInterceptor {
         } finally {
             long durationMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - start);
             priceModelInvocations(builder);
+            // REDACT ATTRIBUTES TOO, not only captured input/output.
+            //
+            // Attributes are the second path into durable storage and were not covered: an application
+            // recording a reason code that happens to carry a token stored it raw, however carefully it had
+            // configured a redactor. Applied here rather than at recordAttribute because this is where the
+            // redactor lives, and once per execution beats once per call.
+            builder.sanitizeAttributes(options.redactor()::redact);
             CapabilityExecution execution = builder
                     .finishedAt(Instant.now())
                     .durationMs(durationMs)

@@ -8,7 +8,11 @@ import java.time.Instant;
 import java.util.ArrayDeque;
 import java.util.Deque;
 import java.util.Optional;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.UUID;
+import java.lang.System.Logger;
+import java.lang.System.Logger.Level;
 
 /**
  * Thread-local access to the capability execution(s) currently in flight.
@@ -29,8 +33,41 @@ import java.util.UUID;
  */
 public final class CapabilityExecutionContext {
 
+    private static final Logger log = System.getLogger(CapabilityExecutionContext.class.getName());
+
     private static final ThreadLocal<Deque<CapabilityExecution.Builder>> STACK =
             ThreadLocal.withInitial(ArrayDeque::new);
+
+    /**
+     * The allow-list consulted by {@link #recordAttribute(String, String)}.
+     *
+     * <p>Static because this whole class is: enrichment is called from application code that has no
+     * handle on a Capstead bean, which is the reason the seam is static in the first place. Auto-
+     * configuration installs the application's registry at startup.
+     *
+     * <p>Defaults to {@link ExecutionAttributeRegistry#empty()}, so an application that has declared
+     * nothing records nothing rather than everything.
+     */
+    private static volatile ExecutionAttributeRegistry registry = ExecutionAttributeRegistry.empty();
+
+    /** Names already warned about, so a rejected attribute inside a loop logs once rather than per call. */
+    private static final Set<String> WARNED = ConcurrentHashMap.newKeySet();
+
+    /**
+     * A ceiling on that set, because it is static and lives as long as the JVM.
+     *
+     * <p>It grows by one per DISTINCT rejected name, which is bounded only if names are a fixed
+     * vocabulary. An application that builds a name from a request or run id — the mistake the allow-list
+     * is meant to catch — would grow it without limit, so the leak would be worst exactly when the code is
+     * most wrong. Raised in review.
+     *
+     * <p>At the ceiling it stops recording and stops warning, after saying so once. Clearing and starting
+     * again would restore the log spam this exists to prevent, on a loop.
+     */
+    private static final int WARNED_LIMIT = 64;
+
+    private static final java.util.concurrent.atomic.AtomicBoolean WARNED_LIMIT_REPORTED =
+            new java.util.concurrent.atomic.AtomicBoolean();
 
     private CapabilityExecutionContext() {
     }
@@ -99,5 +136,84 @@ public final class CapabilityExecutionContext {
     /** Enriches the current execution with a retry count. */
     public static void recordRetries(int retries) {
         current().ifPresent(builder -> builder.retries(retries));
+    }
+
+    /**
+     * Record what this execution decided, or which versioned input it acted on.
+     *
+     * <pre>{@code
+     * CapabilityExecutionContext.recordAttribute("policy.authorization.outcome", "DENY");
+     * CapabilityExecutionContext.recordAttribute("evidence.sourceRevision", "7");
+     * }</pre>
+     *
+     * <p>A no-op when no execution is active, like every other enrichment call here.
+     *
+     * <p><b>Silently does nothing if the name is not declared in the registry</b>, or if the name or value
+     * breaks the rules in {@code ExecutionAttributes}. It never throws: this runs inside a business method
+     * that must not fail because of how it is being measured. A rejection is logged once per name, at WARN,
+     * naming the attribute — which is how a developer finds out, without a loop filling the log.
+     */
+    public static void recordAttribute(String name, String value) {
+        current().ifPresent(builder -> {
+            if (!registry.allows(name)) {
+                warnOnce(name, "it is not declared in capstead.attributes.allowed");
+                return;
+            }
+            if (builder.attributeRejected(name, value)) {
+                warnOnce(name, "the name or value breaks the attribute rules, or this execution is at the"
+                        + " limit of " + io.capstead.core.ExecutionAttributes.MAX_PER_EXECUTION);
+                return;
+            }
+            builder.attribute(name, value);
+        });
+    }
+
+    private static void warnOnce(String name, String because) {
+        String key = String.valueOf(name);
+        if (WARNED.contains(key)) {
+            return;
+        }
+        if (WARNED.size() >= WARNED_LIMIT) {
+            if (WARNED_LIMIT_REPORTED.compareAndSet(false, true)) {
+                log.log(Level.WARNING, "[capstead] more than {0} distinct attribute names have been"
+                        + " rejected; no further rejections will be logged. A name built from a request or"
+                        + " run id would do this — attribute NAMES are a fixed vocabulary, and variable data"
+                        + " belongs in the value.", WARNED_LIMIT);
+            }
+            return;
+        }
+        WARNED.add(key);
+        log.log(Level.WARNING, "[capstead] attribute ''{0}'' was not recorded: {1}", name, because);
+    }
+
+    /**
+     * Install the application's attribute allow-list. Called by auto-configuration at startup.
+     *
+     * <p>Also clears the warned-name set, so a test or a restart that changes the registry can be warned
+     * about the same name again rather than being silently different from a fresh JVM.
+     */
+    public static void useRegistry(ExecutionAttributeRegistry replacement) {
+        registry = replacement == null ? ExecutionAttributeRegistry.empty() : replacement;
+        WARNED.clear();
+        WARNED_LIMIT_REPORTED.set(false);
+    }
+
+    /** The installed allow-list. Never null. */
+    public static ExecutionAttributeRegistry registry() {
+        return registry;
+    }
+
+    /**
+     * How many distinct rejected names are being remembered, so the ceiling can be asserted rather than
+     * described. Package-private: this is a bound on a static field, and a test that only checks nothing
+     * throws would pass just as well with no bound at all.
+     */
+    static int warnedNameCount() {
+        return WARNED.size();
+    }
+
+    /** The ceiling on that set. Package-private for the same reason. */
+    static int warnedNameLimit() {
+        return WARNED_LIMIT;
     }
 }

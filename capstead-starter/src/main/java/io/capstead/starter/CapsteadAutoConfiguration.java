@@ -6,9 +6,11 @@ import io.capstead.runtime.CapabilityBudgetLedger;
 import io.capstead.runtime.CapabilityCatalog;
 import io.capstead.runtime.CapabilityDataRedactor;
 import io.capstead.runtime.CapabilityDiscovery;
+import io.capstead.runtime.CapabilityExecutionContext;
 import io.capstead.runtime.CapabilityExecutionOptions;
 import io.capstead.runtime.CapabilityExecutionPublisher;
 import io.capstead.runtime.CapabilityExecutionQuery;
+import io.capstead.runtime.ExecutionAttributeRegistry;
 import io.capstead.runtime.CapabilityExecutionRecorder;
 import io.capstead.runtime.CapabilityMetadataResolver;
 import io.capstead.runtime.CapabilityMethodInterceptor;
@@ -66,9 +68,12 @@ import java.util.stream.Collectors;
  * {@link ConditionalOnMissingBean}, so applications can override any piece.
  */
 @AutoConfiguration
-@EnableConfigurationProperties({CapsteadCostProperties.class, CapsteadScanProperties.class, CapsteadCapabilitiesProperties.class, CapsteadExecutionsProperties.class, CapsteadPipelinesProperties.class})
+@EnableConfigurationProperties({CapsteadCostProperties.class, CapsteadScanProperties.class, CapsteadCapabilitiesProperties.class, CapsteadExecutionsProperties.class, CapsteadPipelinesProperties.class, CapsteadAttributesProperties.class})
 @Import(CapsteadAutoConfiguration.CapabilityAutoProxyRegistrar.class)
 public class CapsteadAutoConfiguration {
+
+    private static final System.Logger log =
+            System.getLogger(CapsteadAutoConfiguration.class.getName());
 
     /**
      * Static + infrastructure role because the registry is pulled (via the explicit resolver and
@@ -106,6 +111,32 @@ public class CapsteadAutoConfiguration {
     @ConditionalOnMissingBean
     public InMemoryCapabilityExecutionStore capabilityExecutionStore(CapsteadExecutionsProperties executionsProperties) {
         return new InMemoryCapabilityExecutionStore(executionsProperties.getMaxHistory());
+    }
+
+    /**
+     * The execution attribute allow-list, built from {@code capstead.attributes.allowed}.
+     *
+     * <p>Also INSTALLED into {@link CapabilityExecutionContext}, which is the part that makes attributes
+     * reachable at all: application code records them through that static seam, because it is called from
+     * inside a business method that holds no reference to a Capstead bean. Publishing the registry as a
+     * bean as well means an application can inspect or replace it the ordinary way.
+     *
+     * <p>Installed here rather than in an {@code @PostConstruct} elsewhere so that it happens once, at the
+     * point the registry is created, and so replacing this bean replaces what the context enforces.
+     */
+    @Bean
+    @ConditionalOnMissingBean
+    public ExecutionAttributeRegistry executionAttributeRegistry(CapsteadAttributesProperties properties) {
+        ExecutionAttributeRegistry registry = new ExecutionAttributeRegistry(properties.getAllowed());
+        CapabilityExecutionContext.useRegistry(registry);
+        if (registry.isEmpty() && !properties.getAllowed().isEmpty()) {
+            // Every declared name was malformed, so the application asked for attributes and got none.
+            // Silence here would look identical to not having configured anything.
+            log.log(System.Logger.Level.WARNING,
+                    "[capstead] every name in capstead.attributes.allowed was rejected as malformed;"
+                            + " attribute names must be namespaced, e.g. evidence.state");
+        }
+        return registry;
     }
 
     @Bean
