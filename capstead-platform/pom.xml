@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>io.capstead</groupId>
+        <artifactId>capstead-parent</artifactId>
+        <version>0.9.0</version>
+    </parent>
+
+    <artifactId>capstead-platform</artifactId>
+    <description>Incident intelligence for governed capabilities: expectations, expected-vs-actual
+        comparison, deterministic rules, immutable evidence and a read-only incident API. Consumes
+        Capstead 0.9.0 native executions; owns no execution recording, persistence, attributes,
+        redaction, tool naming, cost tracking or trees of its own.</description>
+
+    <dependencies>
+        <dependency>
+            <groupId>io.capstead</groupId>
+            <artifactId>capstead-core</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>io.capstead</groupId>
+            <artifactId>capstead-runtime</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>io.capstead</groupId>
+            <artifactId>capstead-mcp</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-autoconfigure</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-actuator</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+</project>

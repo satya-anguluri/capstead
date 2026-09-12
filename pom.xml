@@ -57,6 +57,7 @@
         <module>capstead-mcp</module>
         <module>capstead-mcp-server</module>
         <module>capstead-jdbc</module>
+        <module>capstead-platform</module>
     </modules>
 
     <dependencyManagement>
@@ -64,6 +65,11 @@
             <dependency>
                 <groupId>io.capstead</groupId>
                 <artifactId>capstead-annotations</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.capstead</groupId>
+                <artifactId>capstead-platform</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>
