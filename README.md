@@ -8,6 +8,8 @@ Capstead is **not** another AI framework. It's the governance layer that sits *a
 
 📖 **[Read the research: Governing AI capabilities in Spring Boot →](https://capstead.io/research/)**
 
+💼 **[Follow Capstead on LinkedIn →](https://www.linkedin.com/company/capstead/)** — release notes, and write-ups of the design decisions behind them.
+
 ---
 
 ## Why
