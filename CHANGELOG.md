@@ -13,6 +13,33 @@ may change behaviour or a public shape, a **patch** never does.
 > categories used above, with the code samples left on the releases. Where the two differ, the release
 > page is the original record.
 
+## 0.10.0
+
+Publish one interoperable, privacy-safe incident reproduction contract that Capstead Platform and authorized
+lab runners can validate instead of maintaining two prose descriptions that drift silently.
+
+### Added
+
+- **`IncidentReproductionBundle` v1 JSON Schema.** The authoritative draft-2020-12 schema is packaged in
+  `capstead-core` at `schema/incident-reproduction-bundle-v1.json`. It separates observed facts,
+  explicit unknowns and non-diagnostic candidate patterns; requires native execution references, recipient
+  identity and a redaction manifest; and closes the reproduction disposition to the six documented values.
+- **One published canonical fixture.** `schema/incident-reproduction-bundle-v1.fixture.json` travels in
+  the same JAR, so producers and consumers can run their contract tests against the same example rather
+  than vendoring copies.
+- **Tamper-evident integrity semantics.** The digest is SHA-256 over the UTF-8 RFC 8785 canonical form after
+  removing the top-level `integrityDigest` field. The fixture contains a real digest, and tests prove a
+  content mutation invalidates it.
+
+### Contract guarantees
+
+- Unknown top-level fields and unknown reproduction dispositions are refused.
+- `unknownFacts` is required even when empty, so uncertainty cannot disappear by omission.
+- Source execution references must be `CAPSTEAD_EXECUTION` references; an external identifier cannot be
+  substituted where native evidence is required.
+- The schema defines the handoff envelope only. It contains no detection rules, customer evidence,
+  matching logic or confidence calculation.
+
 ## 0.9.0
 
 Record what an execution **decided**, not only how it went — namespaced, allow-listed attributes that persist
