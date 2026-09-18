@@ -21,6 +21,12 @@ class IncidentDashboardContractTest {
                 "Evidence quality", "Possible causes", "Recommended checks");
         assertThat(page).contains("Not evaluated. Capstead is not claiming a root cause");
         assertThat(page).contains("Open native execution evidence", "aria-live=\"polite\"");
-        assertThat(page).doesNotContain("Confidence: High", "Root cause confirmed");
+        assertThat(page).contains("safeNativeExecutionEndpoint", "url.origin !== location.origin",
+                "'/actuator/capabilityexecutions/'");
+        assertThat(page).contains("response.status === 404 && notFoundIsNull",
+                "getJson(DETAILS_URL + '/' + encodeURIComponent(id), true)",
+                "if (!Array.isArray(incidents))");
+        assertThat(page).doesNotContain("href=\"${esc(e.nativeExecutionEndpoint)}\"",
+                "renderList(incidents || [])", "Confidence: High", "Root cause confirmed");
     }
 }
