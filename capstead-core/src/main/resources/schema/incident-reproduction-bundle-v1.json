@@ -1,0 +1,269 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://capstead.io/schema/incident-reproduction-bundle-v1.json",
+  "title": "IncidentReproductionBundle v1",
+  "description": "Privacy-safe, non-diagnostic handoff from a Capstead incident to an authorized reproduction runner.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "bundleId",
+    "schemaVersion",
+    "createdAt",
+    "recipient",
+    "incidentId",
+    "incidentFingerprint",
+    "incidentType",
+    "ruleId",
+    "ruleVersion",
+    "evidenceCompleteness",
+    "sourceExecutionReferences",
+    "observedFacts",
+    "unknownFacts",
+    "applicableExpectationVersion",
+    "sanitizedTopology",
+    "toolIdentities",
+    "sideEffectSummary",
+    "externalKnowledgeReferences",
+    "candidatePatternReferences",
+    "reproductionDisposition",
+    "redactionManifest",
+    "integrityDigest"
+  ],
+  "properties": {
+    "bundleId": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "schemaVersion": { "const": 1 },
+    "createdAt": { "type": "string", "format": "date-time" },
+    "recipient": { "$ref": "#/$defs/recipient" },
+    "incidentId": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "incidentFingerprint": { "type": "string", "minLength": 1, "maxLength": 256 },
+    "incidentType": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "ruleId": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "ruleVersion": { "type": "string", "minLength": 1, "maxLength": 64 },
+    "evidenceCompleteness": { "$ref": "#/$defs/evidenceCompleteness" },
+    "sourceExecutionReferences": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/capsteadExecutionReference" },
+      "minItems": 1,
+      "uniqueItems": true
+    },
+    "observedFacts": {
+      "type": "array",
+      "description": "Facts directly supported by immutable Capstead evidence. Candidate causes are prohibited here.",
+      "items": { "$ref": "#/$defs/observedFact" },
+      "minItems": 1
+    },
+    "unknownFacts": {
+      "type": "array",
+      "description": "Explicit unknowns; required even when empty so uncertainty cannot be omitted accidentally.",
+      "items": { "$ref": "#/$defs/unknownFact" }
+    },
+    "applicableExpectationVersion": {
+      "type": ["string", "null"],
+      "maxLength": 128
+    },
+    "sanitizedTopology": { "$ref": "#/$defs/sanitizedTopology" },
+    "toolIdentities": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/toolIdentity" },
+      "uniqueItems": true
+    },
+    "sideEffectSummary": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/sideEffectSummary" }
+    },
+    "externalKnowledgeReferences": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/knowledgeReference" }
+    },
+    "candidatePatternReferences": {
+      "type": "array",
+      "description": "Non-diagnostic candidates. These never become observed facts or asserted root causes.",
+      "items": { "$ref": "#/$defs/candidatePatternReference" }
+    },
+    "reproductionDisposition": {
+      "type": "string",
+      "enum": [
+        "NOT_EVALUATED",
+        "NOT_REPRODUCIBLE_FROM_AVAILABLE_EVIDENCE",
+        "CANDIDATE_PATTERN_AVAILABLE",
+        "READY_FOR_AUTHORIZED_HANDOFF",
+        "BLOCKED_BY_INCOMPLETE_EVIDENCE",
+        "BLOCKED_BY_POLICY"
+      ]
+    },
+    "redactionManifest": { "$ref": "#/$defs/redactionManifest" },
+    "integrityDigest": {
+      "type": "string",
+      "description": "Lowercase SHA-256 over the UTF-8 RFC 8785 JSON Canonicalization Scheme serialization of the complete bundle after removing the top-level integrityDigest property.",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    }
+  },
+  "$defs": {
+    "recipient": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "id"],
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": ["ENGINEERPREP", "INTERNAL_LAB", "OTHER_AUTHORIZED_RUNNER"]
+        },
+        "id": { "type": "string", "minLength": 1, "maxLength": 128 }
+      }
+    },
+    "capsteadExecutionReference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "id"],
+      "properties": {
+        "type": { "const": "CAPSTEAD_EXECUTION" },
+        "id": { "type": "string", "minLength": 1, "maxLength": 256 }
+      }
+    },
+    "reference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "id"],
+      "properties": {
+        "type": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "id": { "type": "string", "minLength": 1, "maxLength": 256 }
+      }
+    },
+    "evidenceCompleteness": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "requiredSignals", "observedSignals", "missingSignals"],
+      "properties": {
+        "status": { "type": "string", "enum": ["COMPLETE", "PARTIAL", "INSUFFICIENT"] },
+        "requiredSignals": { "type": "integer", "minimum": 0 },
+        "observedSignals": { "type": "integer", "minimum": 0 },
+        "missingSignals": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1, "maxLength": 128 },
+          "uniqueItems": true
+        }
+      }
+    },
+    "observedFact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["factType", "value", "evidenceReferences"],
+      "properties": {
+        "factType": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "value": { "type": ["string", "number", "integer", "boolean", "null"] },
+        "evidenceReferences": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/reference" },
+          "minItems": 1
+        }
+      }
+    },
+    "unknownFact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["factType", "reason"],
+      "properties": {
+        "factType": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "reason": { "type": "string", "minLength": 1, "maxLength": 512 }
+      }
+    },
+    "sanitizedTopology": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["nodes", "edges"],
+      "properties": {
+        "nodes": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["id", "kind"],
+            "properties": {
+              "id": { "type": "string", "minLength": 1, "maxLength": 128 },
+              "kind": { "type": "string", "minLength": 1, "maxLength": 64 }
+            }
+          }
+        },
+        "edges": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["from", "to", "relationship"],
+            "properties": {
+              "from": { "type": "string", "minLength": 1, "maxLength": 128 },
+              "to": { "type": "string", "minLength": 1, "maxLength": 128 },
+              "relationship": { "type": "string", "minLength": 1, "maxLength": 64 }
+            }
+          }
+        }
+      }
+    },
+    "toolIdentity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["capability", "operation"],
+      "properties": {
+        "capability": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "operation": { "type": "string", "minLength": 1, "maxLength": 128 }
+      }
+    },
+    "sideEffectSummary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["effectType", "lifecycleState", "occurrenceCount"],
+      "properties": {
+        "effectType": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "lifecycleState": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "occurrenceCount": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "knowledgeReference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["registry", "referenceId", "relationship"],
+      "properties": {
+        "registry": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "referenceId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "relationship": { "type": "string", "enum": ["RELATED_TO", "INSPIRED_BY"] }
+      }
+    },
+    "candidatePatternReference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["registry", "patternId", "relationship"],
+      "properties": {
+        "registry": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "patternId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "patternVersion": { "type": ["string", "null"], "maxLength": 64 },
+        "relationship": { "type": "string", "enum": ["RELATED_TO", "INSPIRED_BY"] }
+      }
+    },
+    "redactionManifest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["policyVersion", "excludedCategories"],
+      "properties": {
+        "policyVersion": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "excludedCategories": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "PROMPTS",
+              "MODEL_RESPONSES",
+              "TOOL_ARGUMENTS",
+              "TOOL_RESULTS",
+              "RAW_TRACES",
+              "SOURCE_CODE",
+              "CREDENTIALS",
+              "CUSTOMER_IDENTIFIERS",
+              "DATABASE_VALUES"
+            ]
+          },
+          "uniqueItems": true
+        }
+      }
+    }
+  }
+}
