@@ -7,11 +7,15 @@ import com.networknt.schema.JsonSchema;
 import com.networknt.schema.JsonSchemaFactory;
 import com.networknt.schema.SpecVersion;
 import com.networknt.schema.ValidationMessage;
+import org.erdtman.jcs.JsonCanonicalizer;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.util.HexFormat;
 import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -68,6 +72,33 @@ class IncidentReproductionBundleSchemaTest {
         changed.put("schemaVersion", 2);
 
         assertInvalid(changed, "const");
+    }
+
+    @Test
+    void sourceReferencesMustPointToNativeCapsteadExecutions() {
+        ObjectNode changed = fixture.deepCopy();
+        ((ObjectNode) changed.path("sourceExecutionReferences").path(0)).put("type", "EXTERNAL");
+
+        assertInvalid(changed, "const");
+    }
+
+    @Test
+    void fixtureDigestMatchesRfc8785CanonicalContent() throws Exception {
+        assertTrue(digestMatches(fixture), "the published fixture digest must cover its canonical content");
+
+        ObjectNode changed = fixture.deepCopy();
+        changed.put("incidentType", "TAMPERED");
+        assertFalse(digestMatches(changed), "changing a signed field must invalidate the digest");
+    }
+
+    private static boolean digestMatches(JsonNode value) throws Exception {
+        ObjectNode unsigned = value.deepCopy();
+        String declared = unsigned.remove("integrityDigest").asText();
+        byte[] canonical = new JsonCanonicalizer(JSON.writeValueAsString(unsigned)).getEncodedUTF8();
+        String actual = "sha256:" + HexFormat.of().formatHex(
+                MessageDigest.getInstance("SHA-256").digest(canonical));
+        return MessageDigest.isEqual(declared.getBytes(StandardCharsets.US_ASCII),
+                actual.getBytes(StandardCharsets.US_ASCII));
     }
 
     private static void assertValid(JsonNode value) {
