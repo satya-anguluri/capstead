@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <title>Capstead — Incidents</title>
+    <style>
+        :root { --bg:#0f1420; --card:#171d2b; --line:#26304a; --text:#e6ebf5; --muted:#8b97b3; --ok:#37d67a; --warn:#f6c343; --bad:#f05a5a; --accent:#5b8cff; }
+        * { box-sizing:border-box; }
+        body { margin:0; background:var(--bg); color:var(--text); font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif; }
+        header { padding:20px 32px; border-bottom:1px solid var(--line); display:flex; align-items:center; gap:18px; }
+        header h1 { margin:0; font-size:20px; }
+        nav { display:flex; gap:8px; }
+        a, button { color:var(--text); }
+        nav a, button, .action { background:var(--card); border:1px solid var(--line); border-radius:8px; padding:8px 14px; text-decoration:none; cursor:pointer; }
+        nav a.active, nav a:hover, button:hover, .action:hover { border-color:var(--accent); }
+        header .spacer { flex:1; }
+        main { max-width:1200px; margin:auto; padding:24px 32px 48px; }
+        .state { color:var(--muted); padding:48px 16px; text-align:center; border:1px dashed var(--line); border-radius:12px; }
+        .list { display:grid; gap:12px; }
+        .incident { width:100%; text-align:left; padding:16px 18px; background:var(--card); border:1px solid var(--line); border-radius:12px; }
+        .incident:hover { border-color:var(--accent); }
+        .incident-top, .heading { display:flex; justify-content:space-between; align-items:flex-start; gap:16px; }
+        .incident h2, .heading h2 { margin:0; font-size:16px; }
+        .meta { color:var(--muted); margin-top:6px; }
+        .pill { display:inline-block; padding:2px 9px; border-radius:999px; font-size:12px; font-weight:600; }
+        .pill.bad { background:rgba(240,90,90,.15); color:var(--bad); }
+        .pill.warn { background:rgba(246,195,67,.15); color:var(--warn); }
+        .pill.neutral { background:rgba(139,151,179,.15); color:var(--muted); }
+        .grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:16px; margin-top:18px; }
+        section { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:18px; }
+        section.wide { grid-column:1 / -1; }
+        section h3 { margin:0 0 12px; color:var(--muted); font-size:12px; text-transform:uppercase; letter-spacing:.6px; }
+        dl { display:grid; grid-template-columns:minmax(120px,35%) 1fr; gap:8px 14px; margin:0; }
+        dt { color:var(--muted); } dd { margin:0; overflow-wrap:anywhere; }
+        ul { margin:8px 0 0; padding-left:20px; }
+        code { color:var(--accent); background:#0c1119; padding:2px 6px; border-radius:5px; overflow-wrap:anywhere; }
+        .notice { border-left:3px solid var(--warn); padding-left:12px; color:var(--muted); }
+        .actions { display:flex; flex-wrap:wrap; gap:10px; margin-top:18px; }
+        @media (max-width:720px) {
+            header { padding:16px; flex-wrap:wrap; } header .spacer { display:none; }
+            main { padding:18px 16px 36px; } .grid { grid-template-columns:1fr; }
+            section.wide { grid-column:auto; } .incident-top, .heading { flex-direction:column; }
+            dl { grid-template-columns:1fr; gap:2px; } dd { margin-bottom:8px; }
+        }
+    </style>
+</head>
+<body>
+<header>
+    <h1>Capstead</h1>
+    <nav aria-label="Primary">
+        <a href="./">Capabilities</a>
+        <a href="./incidents.html" class="active" aria-current="page">Incidents</a>
+    </nav>
+    <span class="spacer"></span>
+    <button id="refresh" type="button">Refresh</button>
+</header>
+<main id="content" aria-live="polite"><div class="state">Loading incidents…</div></main>
+<script>
+    const BASE = (location.pathname.replace(/\/capstead\/incidents\.html$/, '') || '');
+    const INCIDENTS_URL = BASE + '/actuator/incidents';
+    const DETAILS_URL = BASE + '/actuator/incidentdetails';
+    const content = document.getElementById('content');
+    const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    const label = value => String(value ?? 'Unknown').replaceAll('_', ' ').toLowerCase().replace(/\b\w/g, c => c.toUpperCase());
+    const dateTime = value => value ? new Date(value).toLocaleString() : 'Unknown';
+    const values = items => (items && items.length) ? items.map(v => `<code>${esc(v)}</code>`).join(' ') : '<span class="meta">None observed</span>';
+
+    async function getJson(url, notFoundIsNull = false) {
+        const response = await fetch(url, {headers:{'Accept':'application/json'}});
+        if (response.status === 404 && notFoundIsNull) return null;
+        if (!response.ok) throw new Error('HTTP ' + response.status);
+        return response.json();
+    }
+
+    function safeNativeExecutionEndpoint(value) {
+        try {
+            const url = new URL(String(value ?? ''), location.origin);
+            const expectedPrefix = (BASE || '') + '/actuator/capabilityexecutions/';
+            if ((url.protocol !== 'http:' && url.protocol !== 'https:')
+                    || url.origin !== location.origin
+                    || !url.pathname.startsWith(expectedPrefix)) return null;
+            return url.pathname + url.search + url.hash;
+        } catch (error) {
+            return null;
+        }
+    }
+
+    function renderList(incidents) {
+        if (!incidents.length) {
+            content.innerHTML = '<div class="state">No deterministic incidents have been produced.</div>';
+            return;
+        }
+        content.innerHTML = `<div class="heading"><div><h2>Incidents</h2><div class="meta">Observed failures, most recent first</div></div></div>
+            <div class="list" style="margin-top:18px">${incidents.map(i => `<button class="incident" type="button" data-id="${esc(i.incidentId)}">
+                <div class="incident-top"><div><h2>${esc(label(i.incidentType))}</h2>
+                <div class="meta">${esc(i.service || 'Unknown service')} · ${esc(i.capabilityName || 'Unknown capability')} · ${esc(dateTime(i.detectedAt))}</div></div>
+                <span class="pill bad">${esc(i.severity || 'UNKNOWN')}</span></div>
+                <div class="meta">Incident <code>${esc(i.incidentId)}</code></div>
+            </button>`).join('')}</div>`;
+        content.querySelectorAll('[data-id]').forEach(button =>
+            button.addEventListener('click', () => openDetail(button.getAttribute('data-id'))));
+    }
+
+    async function openDetail(id) {
+        content.innerHTML = '<div class="state">Loading incident detail…</div>';
+        try {
+            const d = await getJson(DETAILS_URL + '/' + encodeURIComponent(id), true);
+            if (!d) {
+                content.innerHTML = '<div class="state">This incident no longer exists or is not accessible.</div>';
+                return;
+            }
+            const s=d.summary, w=d.whatBroke, e=d.evidence, o=d.occurrences, a=d.assessment;
+            const nativeEvidenceUrl = safeNativeExecutionEndpoint(e.nativeExecutionEndpoint);
+            const nativeEvidenceAction = nativeEvidenceUrl
+                ? `<a class="action" href="${esc(nativeEvidenceUrl)}">Open native execution evidence</a>`
+                : '<span class="meta">Native execution evidence link is unavailable.</span>';
+            const causes = a.possibleCauses && a.possibleCauses.length
+                ? `<ul>${a.possibleCauses.map(c => `<li>${esc(c)}</li>`).join('')}</ul>`
+                : '<p class="notice">Not evaluated. Capstead is not claiming a root cause from this evidence.</p>';
+            content.innerHTML = `<button type="button" id="back">← All incidents</button>
+                <div class="heading" style="margin-top:18px"><div><h2>${esc(label(s.incidentType))}</h2>
+                <div class="meta">Incident <code>${esc(s.incidentId)}</code></div></div><span class="pill bad">${esc(s.severity)}</span></div>
+                <div class="grid">
+                    <section><h3>Observed incident</h3><dl>
+                        <dt>Service</dt><dd>${esc(s.service || 'Unknown')}</dd><dt>Capability</dt><dd>${esc(s.capabilityName || 'Unknown')} ${s.capabilityVersion ? 'v'+esc(s.capabilityVersion) : ''}</dd>
+                        <dt>Environment</dt><dd>${esc(s.environment || 'Unknown')}</dd><dt>Detected</dt><dd>${esc(dateTime(s.detectedAt))}</dd>
+                        <dt>Occurrences</dt><dd>${esc(o.count)} · ${esc(dateTime(o.firstSeen))} to ${esc(dateTime(o.lastSeen))}</dd>
+                    </dl></section>
+                    <section><h3>Evidence quality</h3><dl>
+                        <dt>Completeness</dt><dd><span class="pill ${e.completeness === 'COMPLETE' ? 'neutral' : 'warn'}">${esc(e.completeness || 'UNKNOWN')}</span></dd>
+                        <dt>Confidence</dt><dd><span class="pill neutral">${esc(label(a.confidence))}</span></dd>
+                        <dt>Rule</dt><dd><code>${esc(e.ruleId)} v${esc(e.ruleVersion)}</code></dd>
+                        <dt>Expectation</dt><dd><code>${esc(e.expectationId)} r${esc(e.expectationRevision)}</code></dd>
+                    </dl></section>
+                    <section class="wide"><h3>What broke</h3><p>${esc(w.explanation)}</p><dl>
+                        <dt>Expected</dt><dd><code>${esc(w.expectedOperation || 'Unknown')}</code></dd>
+                        <dt>Observed</dt><dd>${values(w.observedOperations)}</dd>
+                        <dt>Unexpected</dt><dd>${values(w.unexpectedOperations)}</dd>
+                        <dt>Comparison</dt><dd>${esc(label(w.comparisonOutcome))}</dd>
+                        <dt>Observed failure</dt><dd>${w.observedToolFailed ? esc(w.observedErrorType || 'Failure recorded without an error type') : 'No failed tool execution recorded'}</dd>
+                    </dl></section>
+                    <section><h3>Possible causes</h3>${causes}</section>
+                    <section><h3>Recommended checks</h3><ul>${(a.recommendedChecks || []).map(check => `<li>${esc(check)}</li>`).join('')}</ul></section>
+                </div>
+                <div class="actions">${nativeEvidenceAction}</div>`;
+            document.getElementById('back').addEventListener('click', load);
+        } catch (error) {
+            content.innerHTML = '<div class="state">Incident detail is temporarily unavailable. No diagnostic conclusion was drawn.</div>';
+        }
+    }
+
+    async function load() {
+        content.innerHTML = '<div class="state">Loading incidents…</div>';
+        try {
+            const incidents = await getJson(INCIDENTS_URL);
+            if (!Array.isArray(incidents)) throw new Error('Invalid incidents response');
+            renderList(incidents);
+        } catch (error) {
+            content.innerHTML = '<div class="state">Could not load incidents. Ensure the <code>incidents</code> and <code>incidentdetails</code> Actuator endpoints are exposed.</div>';
+        }
+    }
+
+    document.getElementById('refresh').addEventListener('click', load);
+    load();
+</script>
+</body>
+</html>
