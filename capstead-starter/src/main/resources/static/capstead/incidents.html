@@ -66,11 +66,24 @@
     const dateTime = value => value ? new Date(value).toLocaleString() : 'Unknown';
     const values = items => (items && items.length) ? items.map(v => `<code>${esc(v)}</code>`).join(' ') : '<span class="meta">None observed</span>';
 
-    async function getJson(url) {
+    async function getJson(url, notFoundIsNull = false) {
         const response = await fetch(url, {headers:{'Accept':'application/json'}});
-        if (response.status === 404) return null;
+        if (response.status === 404 && notFoundIsNull) return null;
         if (!response.ok) throw new Error('HTTP ' + response.status);
         return response.json();
+    }
+
+    function safeNativeExecutionEndpoint(value) {
+        try {
+            const url = new URL(String(value ?? ''), location.origin);
+            const expectedPrefix = (BASE || '') + '/actuator/capabilityexecutions/';
+            if ((url.protocol !== 'http:' && url.protocol !== 'https:')
+                    || url.origin !== location.origin
+                    || !url.pathname.startsWith(expectedPrefix)) return null;
+            return url.pathname + url.search + url.hash;
+        } catch (error) {
+            return null;
+        }
     }
 
     function renderList(incidents) {
@@ -92,12 +105,16 @@
     async function openDetail(id) {
         content.innerHTML = '<div class="state">Loading incident detail…</div>';
         try {
-            const d = await getJson(DETAILS_URL + '/' + encodeURIComponent(id));
+            const d = await getJson(DETAILS_URL + '/' + encodeURIComponent(id), true);
             if (!d) {
                 content.innerHTML = '<div class="state">This incident no longer exists or is not accessible.</div>';
                 return;
             }
             const s=d.summary, w=d.whatBroke, e=d.evidence, o=d.occurrences, a=d.assessment;
+            const nativeEvidenceUrl = safeNativeExecutionEndpoint(e.nativeExecutionEndpoint);
+            const nativeEvidenceAction = nativeEvidenceUrl
+                ? `<a class="action" href="${esc(nativeEvidenceUrl)}">Open native execution evidence</a>`
+                : '<span class="meta">Native execution evidence link is unavailable.</span>';
             const causes = a.possibleCauses && a.possibleCauses.length
                 ? `<ul>${a.possibleCauses.map(c => `<li>${esc(c)}</li>`).join('')}</ul>`
                 : '<p class="notice">Not evaluated. Capstead is not claiming a root cause from this evidence.</p>';
@@ -126,7 +143,7 @@
                     <section><h3>Possible causes</h3>${causes}</section>
                     <section><h3>Recommended checks</h3><ul>${(a.recommendedChecks || []).map(check => `<li>${esc(check)}</li>`).join('')}</ul></section>
                 </div>
-                <div class="actions"><a class="action" href="${esc(e.nativeExecutionEndpoint)}">Open native execution evidence</a></div>`;
+                <div class="actions">${nativeEvidenceAction}</div>`;
             document.getElementById('back').addEventListener('click', load);
         } catch (error) {
             content.innerHTML = '<div class="state">Incident detail is temporarily unavailable. No diagnostic conclusion was drawn.</div>';
@@ -137,7 +154,8 @@
         content.innerHTML = '<div class="state">Loading incidents…</div>';
         try {
             const incidents = await getJson(INCIDENTS_URL);
-            renderList(incidents || []);
+            if (!Array.isArray(incidents)) throw new Error('Invalid incidents response');
+            renderList(incidents);
         } catch (error) {
             content.innerHTML = '<div class="state">Could not load incidents. Ensure the <code>incidents</code> and <code>incidentdetails</code> Actuator endpoints are exposed.</div>';
         }
