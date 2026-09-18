@@ -42,7 +42,7 @@
     "evidenceCompleteness": { "$ref": "#/$defs/evidenceCompleteness" },
     "sourceExecutionReferences": {
       "type": "array",
-      "items": { "$ref": "#/$defs/reference" },
+      "items": { "$ref": "#/$defs/capsteadExecutionReference" },
       "minItems": 1,
       "uniqueItems": true
     },
@@ -94,7 +94,7 @@
     "redactionManifest": { "$ref": "#/$defs/redactionManifest" },
     "integrityDigest": {
       "type": "string",
-      "description": "Lowercase SHA-256 of the canonical bundle representation with integrityDigest omitted.",
+      "description": "Lowercase SHA-256 over the UTF-8 RFC 8785 JSON Canonicalization Scheme serialization of the complete bundle after removing the top-level integrityDigest property.",
       "pattern": "^sha256:[a-f0-9]{64}$"
     }
   },
@@ -109,6 +109,15 @@
           "enum": ["ENGINEERPREP", "INTERNAL_LAB", "OTHER_AUTHORIZED_RUNNER"]
         },
         "id": { "type": "string", "minLength": 1, "maxLength": 128 }
+      }
+    },
+    "capsteadExecutionReference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "id"],
+      "properties": {
+        "type": { "const": "CAPSTEAD_EXECUTION" },
+        "id": { "type": "string", "minLength": 1, "maxLength": 256 }
       }
     },
     "reference": {
