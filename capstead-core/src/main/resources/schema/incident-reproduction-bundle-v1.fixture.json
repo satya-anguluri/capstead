@@ -1,0 +1,98 @@
+{
+  "bundleId": "IRB-2026-0001",
+  "schemaVersion": 1,
+  "createdAt": "2026-09-18T12:00:00Z",
+  "recipient": {
+    "type": "ENGINEERPREP",
+    "id": "engineerprep-failure-labs"
+  },
+  "incidentId": "CIR-2026-0001",
+  "incidentFingerprint": "sha256:incident-family-example",
+  "incidentType": "DUPLICATE_SIDE_EFFECT",
+  "ruleId": "CAP-DUPLICATE-SIDE-EFFECT",
+  "ruleVersion": "1",
+  "evidenceCompleteness": {
+    "status": "PARTIAL",
+    "requiredSignals": 5,
+    "observedSignals": 4,
+    "missingSignals": ["approval-policy-version"]
+  },
+  "sourceExecutionReferences": [
+    {
+      "type": "CAPSTEAD_EXECUTION",
+      "id": "exec-public-reference-001"
+    }
+  ],
+  "observedFacts": [
+    {
+      "factType": "side-effect-attempt-count",
+      "value": 2,
+      "evidenceReferences": [
+        {
+          "type": "CAPSTEAD_EXECUTION",
+          "id": "exec-public-reference-001"
+        }
+      ]
+    }
+  ],
+  "unknownFacts": [
+    {
+      "factType": "approval-policy-version",
+      "reason": "The retained incident evidence does not contain this signal."
+    }
+  ],
+  "applicableExpectationVersion": "payment-capture-v3",
+  "sanitizedTopology": {
+    "nodes": [
+      { "id": "agent", "kind": "CAPABILITY" },
+      { "id": "payment-tool", "kind": "TOOL" }
+    ],
+    "edges": [
+      { "from": "agent", "to": "payment-tool", "relationship": "CALLS" }
+    ]
+  },
+  "toolIdentities": [
+    {
+      "capability": "payment-capture",
+      "operation": "capture"
+    }
+  ],
+  "sideEffectSummary": [
+    {
+      "effectType": "PAYMENT_CAPTURE",
+      "lifecycleState": "OUTCOME_UNKNOWN",
+      "occurrenceCount": 2
+    }
+  ],
+  "externalKnowledgeReferences": [
+    {
+      "registry": "CAPSTEAD_CIR",
+      "referenceId": "CIR-2026-0001",
+      "relationship": "RELATED_TO"
+    }
+  ],
+  "candidatePatternReferences": [
+    {
+      "registry": "ENGINEERPREP",
+      "patternId": "AT-01",
+      "patternVersion": "1",
+      "relationship": "RELATED_TO"
+    }
+  ],
+  "reproductionDisposition": "BLOCKED_BY_INCOMPLETE_EVIDENCE",
+  "redactionManifest": {
+    "policyVersion": "default-v1",
+    "excludedCategories": [
+      "PROMPTS",
+      "MODEL_RESPONSES",
+      "TOOL_ARGUMENTS",
+      "TOOL_RESULTS",
+      "RAW_TRACES",
+      "SOURCE_CODE",
+      "CREDENTIALS",
+      "CUSTOMER_IDENTIFIERS",
+      "DATABASE_VALUES"
+    ]
+  },
+  "integrityDigest": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+}
