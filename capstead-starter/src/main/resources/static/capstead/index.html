@@ -12,8 +12,9 @@
         header h1 { margin:0; font-size:20px; letter-spacing:.3px; }
         header .sub { color:var(--muted); font-size:13px; }
         header .spacer { flex:1; }
-        button { background:var(--card); color:var(--text); border:1px solid var(--line); border-radius:8px; padding:8px 14px; cursor:pointer; }
-        button:hover { border-color:var(--accent); }
+        button, .nav-link { background:var(--card); color:var(--text); border:1px solid var(--line); border-radius:8px; padding:8px 14px; cursor:pointer; }
+        button:hover, .nav-link:hover { border-color:var(--accent); }
+        .nav-link { text-decoration:none; }
         main { padding:24px 32px; }
         .cards { display:flex; gap:16px; flex-wrap:wrap; margin-bottom:24px; }
         .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:16px 20px; min-width:180px; }
@@ -48,6 +49,7 @@
 <header>
     <h1>Capstead</h1>
     <span class="sub">Capability Dashboard</span>
+    <a class="nav-link" href="./incidents.html">Incidents</a>
     <span class="spacer"></span>
     <button id="refresh">Refresh</button>
 </header>
