@@ -1,0 +1,23 @@
+{
+  "bundleId":"bundle-demo-001",
+  "schemaVersion":"1.0",
+  "createdAt":"2026-09-24T19:30:00Z",
+  "incidentId":"inc-1001",
+  "incidentFingerprint":"fp:duplicate-side-effect:v1",
+  "incidentType":"DUPLICATE_SIDE_EFFECT",
+  "ruleId":"CAP-INC-042",
+  "ruleVersion":"1",
+  "evidenceCompleteness":{"status":"PARTIAL","availableSignals":4,"requiredSignals":5,"missingSignals":["approval-policy-version"]},
+  "sourceExecutionReferences":[{"executionId":"exec-01","sourceType":"CAPSTEAD_NATIVE"}],
+  "observedFacts":[{"factType":"SIDE_EFFECT_ATTEMPT","subjectRef":"exec-01","predicate":"attempt_count","sanitizedValue":2,"provenance":"CAP-INC-042"}],
+  "unknownFacts":[{"factType":"APPROVAL_POLICY_VERSION","reason":"NOT_CAPTURED"}],
+  "applicableExpectationVersion":"payment-capture-v1",
+  "sanitizedTopology":{"nodes":[{"ref":"agent","kind":"AGENT"},{"ref":"payment-tool","kind":"TOOL"}],"edges":[{"from":"agent","to":"payment-tool","relation":"CALLS"}]},
+  "toolIdentities":["payment.capture.v1"],
+  "sideEffectSummary":[{"effectType":"PAYMENT_CAPTURE","status":"UNCERTAIN_AFTER_RETRY","reference":"effect-01"}],
+  "externalKnowledgeReferences":[],
+  "candidatePatternReferences":[{"patternId":"duplicate-side-effect-after-retry","relation":"RELATED_TO","matchStrength":"STRONG"}],
+  "reproductionDisposition":"BLOCKED_BY_INCOMPLETE_EVIDENCE",
+  "redactionManifest":{"policyVersion":"default-v1","recipient":"ENGINEERPREP_AUTHORIZED","excludedCategories":["PROMPTS","RESPONSES","TOOL_ARGUMENTS","TOOL_RESULTS","CREDENTIALS","CUSTOMER_IDENTIFIERS","SOURCE_CODE","DATABASE_VALUES","RAW_TRACES"]},
+  "integrityDigest":"sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+}
