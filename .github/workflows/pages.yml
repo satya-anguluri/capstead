@@ -56,6 +56,23 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: bash scripts/make-changelog-page.sh
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Verify bounded website event collection
+        run: node scripts/test-site-events.mjs
+
+      - name: Add tracking and disclosure to generated changelog
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          page = Path('website/changelog/index.html')
+          text = page.read_text()
+          note = '<p>We count visits using a daily rotating token, without analytics cookies. Do Not Track and Global Privacy Control are respected.</p>'
+          page.write_text(text.replace('</body>', note + '<script src="/site-events.js" defer></script></body>'))
+          PY
+
       - name: Upload website artifact
         uses: actions/upload-pages-artifact@v3
         with:

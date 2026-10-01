@@ -68,3 +68,15 @@ and a passing deploy with a dead domain is what a DNS problem looks like.
 - Colors/spacing live in `styles.css` (`:root` variables mirror the dashboard).
 - The comparison table and case-study numbers in `research/index.html` are first-party; keep them
   accurate to the current release when bumping versions (currently `0.8.0`).
+
+## Visitor counts
+
+`site-events.js` reports bounded first-party page views to `https://app.capstead.io/site-events`.
+Only the event/version, canonical allowlisted path and a random daily token are sent, without
+credentials, URL queries/fragments, referrers or analytics cookies. DNT/GPC disables collection.
+The token rotates by UTC day; blocked storage can overcount returning visitors, and blocked
+tracking can undercount. No historical visitor totals can be reconstructed before collection starts.
+The private dashboard is https://app.capstead.io/capstead-platform/site-analytics.html.
+Backend CAP-SITE-001 must be enabled with matching origins and paths. Future walkthrough/pilot
+controls can use an explicit allowlisted `data-site-event` attribute; no funnel events are inferred.
+Run `node scripts/test-site-events.mjs` to verify privacy/bounds and degraded storage/network behavior.
